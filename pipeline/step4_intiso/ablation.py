@@ -18,7 +18,7 @@ from utils import nethook
 import torch.nn.functional as F
 
 # ==============================================================================
-# ⚙️ 配置与常量
+# Configuration & Constants
 # ==============================================================================
 
 BLIMP_PARADIGMS = [
@@ -88,13 +88,13 @@ def parse_args():
 
 
 # ==============================================================================
-# 📂 智能文件加载器
+# Smart File Loader
 # ==============================================================================
 def find_file(directory, pattern_keywords, extension, strict=True):
     if not os.path.exists(directory):
         if strict:
             print(f"   [Warning] Directory not found: {directory}")
-            return None  # 降级为 Warning，不报错
+            return None  # Downgrade to Warning instead of crashing
         return None
 
     candidates = []
@@ -106,7 +106,7 @@ def find_file(directory, pattern_keywords, extension, strict=True):
 
     if not candidates:
         if strict:
-            # 降级为 Warning，防止整个程序崩溃
+            # Downgrade to Warning to prevent the whole program from crashing
             print(f"   [Warning] No {extension} file found in {directory} matching {pattern_keywords}")
         return None
 
@@ -116,48 +116,49 @@ def find_file(directory, pattern_keywords, extension, strict=True):
 
 def run_debug_generation(model, tokenizer, layer, method, scale):
     """
-    [Fixed] 执行 15-Shot 采样，自动适配 Llama-3 / Qwen 模板，精准截取生成内容
+    [Fixed] Run 15-shot sampling, auto-adapting to Llama-3 / Qwen chat templates,
+    with precise extraction of the generated content.
     """
     print(f"\n      🔎 [DEBUG SAMPLE] L{layer} | {method} | Scale={scale * 100:.0f}%")
     print(f"      {'=' * 50}")
 
-    # 获取模型名称以选择模板
+    # Get model name to select the appropriate template
     model_name = tokenizer.name_or_path.lower() if tokenizer.name_or_path else ""
 
     for category, prompts in DEBUG_PROMPTS.items():
         print(f"      --- {category} ---")
         for i, prompt_text in enumerate(prompts):
 
-            # 1. 🟢 智能构造 Prompt (适配 Qwen 和 Llama)
+            # 1. Smart prompt construction (adapts to Qwen and Llama)
             if "qwen" in model_name:
-                # Qwen ChatML 格式
+                # Qwen ChatML format
                 full_prompt = f"<|im_start|>user\n{prompt_text}<|im_end|>\n<|im_start|>assistant\n"
             elif "llama" in model_name or "llama3" in model_name:
-                # Llama-3 格式
+                # Llama-3 format
                 full_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{prompt_text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
             else:
                 # Fallback (Base Model style)
                 full_prompt = f"Question: {prompt_text}\nAnswer:"
 
-            # 2. 编码并记录输入长度
+            # 2. Encode and record the input length
             inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
-            input_len = inputs.input_ids.shape[1]  # 关键：记录 Input 有多长
+            input_len = inputs.input_ids.shape[1]  # Critical: record how long the input is
 
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
                     max_new_tokens=512,
-                    do_sample=False,  # 贪婪解码，保证复现性
+                    do_sample=False,  # Greedy decoding for reproducibility
                     temperature=0.0,
                     pad_token_id=tokenizer.eos_token_id
                 )
 
-            # 3. 🟢 精准截取：只解码新增的 tokens
-            # outputs[0] 包含了 [Input_Ids + Generated_Ids]
+            # 3. Precise truncation: only decode the newly generated tokens
+            # outputs[0] contains [Input_Ids + Generated_Ids]
             generated_ids = outputs[0][input_len:]
             generated = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
-            # 压缩成一行显示 (去除换行符，保持 Log 整洁)
+            # Collapse into a single line (remove newlines to keep logs tidy)
             #display_text = generated.replace('\n', ' ').replace('\r', '')
             #if len(display_text) > 200: display_text = display_text[:200] + "..."
 
@@ -292,34 +293,35 @@ def load_blimp_fixed(blimp_root, paradigms=BLIMP_PARADIGMS, samples_per_paradigm
 
 
 # ==============================================================================
-# 🧠 核心矩阵重构 (V9: Robust NPZ Support)
+# Core Matrix Reconstruction (V9: Robust NPZ Support)
 # ==============================================================================
 
-import gc  # 确保导入 gc
+import gc  # Ensure gc is imported
 from contextlib import contextmanager
 
 
 @contextmanager
 def temporary_parameter(model, param_name, new_value):
     """
-    一个上下文管理器，用于临时修改模型参数，退出时自动恢复原始值。
-    替代不存在的 nethook.set_parameter。
+    A context manager that temporarily modifies a model parameter,
+    automatically restoring the original value upon exit.
+    Serves as a replacement for the non-existent nethook.set_parameter.
     """
-    # 1. 获取参数对象
-    # nethook.get_parameter 返回的是 nn.Parameter 对象
+    # 1. Get the parameter object
+    # nethook.get_parameter returns an nn.Parameter object
     param = nethook.get_parameter(model, param_name)
 
-    # 2. 备份原始数据 (clone 以防引用被修改)
+    # 2. Back up the original data (clone to avoid reference mutation)
     old_data = param.data.clone()
 
-    # 3. 应用新权重
-    # 注意：必须修改 .data 属性，并确保类型/设备一致
+    # 3. Apply the new weight
+    # Note: must modify the .data attribute and ensure matching dtype/device
     param.data = new_value.to(param.device, dtype=param.dtype)
 
     try:
         yield
     finally:
-        # 4. 恢复原始数据 (无论中间是否报错)
+        # 4. Restore the original data (whether or not an error occurred)
         param.data = old_data
         # print(f"   🔄 Restored parameter: {param_name}")
 
@@ -328,7 +330,7 @@ def extract_top_k_components(data, k, device):
 
     tensor = None
 
-    # 1. 优先提取标准 Key
+    # 1. Try to extract from standard keys first
     if isinstance(data, dict):
         priority_keys = ['projection_matrix', 'U', 'u', 'eigenvectors', 'eigvecs', 'mom2']
         for key in priority_keys:
@@ -336,7 +338,7 @@ def extract_top_k_components(data, k, device):
                 tensor = data[key]
                 break
 
-        # 2. 兜底搜索：找符合模型维度的大矩阵
+        # 2. Fallback search: look for a large matrix matching model dimensions
         if tensor is None:
             # Qwen=3584/18944, Llama=4096/14336
             valid_dims = {3584, 18944, 4096, 14336}
@@ -349,17 +351,17 @@ def extract_top_k_components(data, k, device):
     elif isinstance(data, torch.Tensor):
         tensor = data
 
-    #  3. 错误拦截
+    # 3. Error interception
     if tensor is None:
         found_keys = list(data.keys()) if isinstance(data, dict) else "N/A"
         raise ValueError(
-            f"\n❌ CRITICAL ERROR: 无法在文件中找到有效矩阵。\n"
-            f"   文件包含 Keys: {found_keys}\n"
-            f"   原因: 没有 Tensor 符合 Qwen (3584) 或 Llama (4096) 的维度。\n"
-            f"   👉 请检查: 您是不是读取了 'spectral_data' (谱分析结果) 而不是矩阵文件？"
+            f"\n❌ CRITICAL ERROR: Could not find a valid matrix in the file.\n"
+            f"   File contains Keys: {found_keys}\n"
+            f"   Reason: No Tensor matches Qwen (3584) or Llama (4096) dimensions.\n"
+            f"   👉 Check: Did you read a 'spectral_data' (spectral analysis result) instead of a matrix file?"
         )
 
-    # 4. 准备处理
+    # 4. Prepare
     del data
     gc.collect()
     torch.cuda.empty_cache()
@@ -367,7 +369,7 @@ def extract_top_k_components(data, k, device):
     shape = tensor.shape
     dim_idx = -1
 
-    # --- 维度判断 (兼容 Qwen) ---
+    # --- Dimension heuristics (Qwen-compatible) ---
     # Qwen Hidden (3584) or Llama Hidden (4096)
     if (3584 in shape or 4096 in shape) and (18944 not in shape and 14336 not in shape):
         target = 3584 if 3584 in shape else 4096
@@ -378,10 +380,10 @@ def extract_top_k_components(data, k, device):
         target = 18944 if 18944 in shape else 14336
         dim_idx = 0 if shape[0] == target else 1
 
-    elif shape[0] == shape[1]:  # 方阵
+    elif shape[0] == shape[1]:  # Square matrix
         dim_idx = -1
 
-    # --- 提取 ---
+    # --- Extract ---
     if dim_idx != -1:
         if dim_idx == 0:
             current_k = min(tensor.shape[1], k)
@@ -391,7 +393,7 @@ def extract_top_k_components(data, k, device):
             result = tensor[:current_k, :].T
         return result.to(device, dtype=torch.float32)
 
-    # --- 方阵分解 (Fallback) ---
+    # --- Square matrix decomposition (Fallback) ---
     try:
         try:
             target_dtype = torch.bfloat16
@@ -402,7 +404,7 @@ def extract_top_k_components(data, k, device):
 
         tensor_gpu += torch.eye(shape[0], device=device, dtype=target_dtype) * 1e-4
         vals, vecs = torch.linalg.eigh(tensor_gpu)
-        result = vecs[:, -k:]  # 取最大的 k 个特征向量
+        result = vecs[:, -k:]  # Take the top-k eigenvectors
 
         del tensor_gpu, vals, vecs
         torch.cuda.empty_cache()
@@ -459,7 +461,7 @@ def get_hybrid_matrix_with_cache(cache_dir, args, device, target_shape):
         except:
             pass
 
-    # 🔍🔍🔍 DEBUG 打印：看看 Hybrid 到底在用什么原料 🔍🔍🔍
+    # DEBUG print: check what raw ingredients the Hybrid matrix is actually using
     print(f"\n   🔎 [DEBUG] Constructing Hybrid Matrix:")
     print(f"      Target Shape: {target_shape}")
 
@@ -470,7 +472,7 @@ def get_hybrid_matrix_with_cache(cache_dir, args, device, target_shape):
     if not rema_path:
         raise FileNotFoundError(f"REMA file not found in {args.rema_dir}")
 
-    # 加载并检查 U 的维度
+    # Load and check U dimensions
     raw_rema = torch.load(rema_path, map_location=device)
     U = extract_top_k_components(raw_rema, args.rema_k, device)
     print(f"      Raw REMA Dim : {U.shape} (Should contain 3584 or 4096)")
@@ -533,7 +535,7 @@ def get_matrix_with_cache(cache_dir, method, identifier, layer, k, device, targe
     try:
         source_path = source_path_finder()
 
-        # 🔍🔍🔍 DEBUG 打印：看看 REMA 到底读了哪个文件 🔍🔍🔍
+        # DEBUG print: check which file REMA is actually reading from
         print(f"\n   🔎 [DEBUG] Loading {method} Matrix:")
         print(f"      Target Shape : {target_shape} (Model Layer)")
         print(f"      Source Path  : {source_path}")
@@ -545,10 +547,10 @@ def get_matrix_with_cache(cache_dir, method, identifier, layer, k, device, targe
         torch.save(mat, cache_path)
         return mat
     except Exception as e:
-        # 打印更详细的错误堆栈
+        # Print a more detailed error stack trace
         import traceback
         print(f"   ❌ Error {method}: {e}")
-        # traceback.print_exc() # 如果需要看代码行号，取消注释这行
+        # traceback.print_exc()  # Uncomment this line if you need the code line numbers
         return torch.randn(target_shape, device=device)
 
 
@@ -557,11 +559,11 @@ from collections import Counter
 import numpy as np
 
 
-# [保留你的 extract_answer 不变] ...
+# [Keep your extract_answer unchanged] ...
 
 def calculate_fluency(text):
     """
-    计算文本流利度 (基于加权 N-gram 熵)
+    Compute text fluency (based on weighted N-gram entropy).
     High Score = Rich/Diverse text
     Low Score (near 0) = Repetitive/Collapsed text
     """
@@ -569,7 +571,7 @@ def calculate_fluency(text):
     if not text:
         return 0.0
 
-    # 简单的分词逻辑
+    # Simple tokenization logic
     tokens = re.findall(r"\w+|[^\w\s]", text, re.UNICODE)
 
     if len(tokens) < 2:
@@ -594,7 +596,7 @@ def calculate_fluency(text):
     e2 = compute_entropy(2)
     e3 = compute_entropy(3)
 
-    # 你的加权逻辑
+    # Weighted scoring logic
     weighted_e2 = e2 * (2 / 3)
     weighted_e3 = e3 * (4 / 3)
 
@@ -605,33 +607,33 @@ def calculate_fluency(text):
 
 def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_size=32):
     """
-    [修复版] 修复 args 报错，增加 Debug 打印，智能匹配模板
+    [Fixed] Eliminate args-related errors, add debug printing, smart template matching.
     """
     correct = 0
     total_fluency = 0.0
     count = 0
 
-    # 1. 截取数据
+    # 1. Truncate data
     test_data = data[:limit]
 
-    # 2. Tokenizer 设置
+    # 2. Tokenizer setup
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = 'left'  # Decoder 必须左填充
+    tokenizer.padding_side = 'left'  # Decoder must use left-padding
 
-    # 3. 按 Batch 遍历
+    # 3. Iterate by batch
     for i in tqdm(range(0, len(test_data), batch_size), desc=f"   [Gen:{task_name}]", leave=False):
         batch = test_data[i: i + batch_size]
 
-        # 3.1 批量构造 Prompts
+        # 3.1 Build prompts in batch
         prompts = []
         golds = []
 
-        # 🟢 修复点 1: 从 tokenizer 获取模型名称，不需要 args
+        # Fix 1: Get model name from tokenizer, no need for args
         model_id = tokenizer.name_or_path.lower() if tokenizer.name_or_path else ""
 
         for q, a in batch:
-            # 尝试使用标准 Chat 模板
+            # Try the standard chat template
             try:
                 messages = [{"role": "user", "content": q}]
                 full_prompt = tokenizer.apply_chat_template(
@@ -640,7 +642,7 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
                     add_generation_prompt=True
                 )
             except:
-                # 🟢 修复点 2: 手动兜底策略 (Qwen 使用 ChatML)
+                # Fix 2: Manual fallback (Qwen uses ChatML)
                 if "qwen" in model_id:
                     full_prompt = f"<|im_start|>user\n{q}<|im_end|>\n<|im_start|>assistant\n"
                 elif "llama" in model_id:
@@ -651,19 +653,19 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
             prompts.append(full_prompt)
             golds.append(str(a).lower().strip().replace(",", ""))
 
-        # 3.2 批量编码
+        # 3.2 Batch encode
         inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(model.device)
         input_len = inputs.input_ids.shape[1]
 
-        eos_ids = [tokenizer.eos_token_id]  # 基础 EOS
+        eos_ids = [tokenizer.eos_token_id]  # Base EOS
 
-        # 根据模型类型添加额外停止符
+        # Add extra stop tokens depending on model type
         if "qwen" in model_id:
             eos_ids.append(tokenizer.convert_tokens_to_ids("<|im_end|>"))
         elif "llama-3" in model_id or "llama3" in model_id:
             eos_ids.append(tokenizer.convert_tokens_to_ids("<|eot_id|>"))
 
-        # 🧹 清洗列表：过滤掉 None 和非整数
+        # Clean the list: filter out None and non-integer entries
         valid_eos_ids = [tid for tid in eos_ids if tid is not None and isinstance(tid, int)]
 
         generate_kwargs = {
@@ -675,7 +677,7 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
         if valid_eos_ids:
             generate_kwargs["eos_token_id"] = valid_eos_ids
 
-        # 3.3 批量生成
+        # 3.3 Batch generation
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
@@ -683,16 +685,16 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
                 do_sample=False,
                 temperature=0.0,
                 pad_token_id=tokenizer.eos_token_id,
-                # 🟢 修复点 3: 显式指定 EOS token，防止 Qwen 停不下来
+                # Fix 3: Explicitly specify EOS tokens to prevent Qwen from failing to stop
                 eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|im_end|>")]
             )
 
-        # 3.4 批量解码与评估
+        # 3.4 Batch decode and evaluate
         for j, output in enumerate(outputs):
             gen_tokens = output[input_len:]
             gen_text = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 
-            # 🔴 DEBUG 核心：打印前几个生成的文本，看看到底是个啥
+            # DEBUG core: Print the first few generated texts to see what they look like
             #if count < 3:
                 #print(f"\n   🔎 [DEBUG Gen] Prompt Tail: ...{prompts[j][-50:].replace(chr(10), ' ')}")
                 #print(f"   🔎 [DEBUG Gen] Output: {gen_text}")
@@ -701,7 +703,7 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
             # 1. Acc
             pred = extract_answer(gen_text, task_name)
 
-            # MQuAKE 特殊处理
+            # MQuAKE special handling
             if task_name.lower() == 'mquake':
                 if golds[j] in gen_text.lower(): correct += 1
             else:
@@ -717,32 +719,32 @@ def eval_generation_metrics(model, tokenizer, data, task_name, limit=500, batch_
     }
 
 def extract_answer(text, task_type):
-    """从生成文本中提取核心答案"""
-    text = text.split("assistant")[-1].strip().lower() # 仅处理 assistant 部分
+    """Extract the core answer from generated text."""
+    text = text.split("assistant")[-1].strip().lower()  # Only process the assistant portion
     if task_type.lower() == 'gsm8k':
-        # 匹配最后的数字，支持逗号千分位
+        # Match the last number, supporting comma thousands separators
         match = re.findall(r"(\d+(?:,\d+)?(?:\.\d+)?)", text)
         if match:
             return match[-1].replace(",", "")
     elif task_type.lower() == 'math':
-        # 优先寻找 \boxed{...}
+        # Prefer \boxed{...}
         match = re.search(r"\\boxed\{(.*?)\}", text)
         if match: return match.group(1).strip()
-        # 备选：找最后的数字
+        # Fallback: take the last number
         nums = re.findall(r"(\d+(?:\.\d+)?)", text)
         return nums[-1] if nums else None
     elif task_type.lower() == 'mquake':
-        return text # MQuAKE 通常直接做字符串包含检测
+        return text  # MQuAKE typically uses a direct string containment check
     return None
 
 
 # ==============================================================================
-# 🛠️ 新增工具函数
+# Additional Utility Functions
 # ==============================================================================
 
 def run_baseline_robustness(model, tokenizer, datasets, seeds=[42, 123, 999], limit=200):
     """
-    测一组三个seed的原始模型对这200个问题的准确率
+    Measure the original model's accuracy on 200 questions across three seeds.
     """
     print(f"\n{'#' * 80}")
     print(f"📊 Baseline Robustness Check (Original Model)")
@@ -757,7 +759,7 @@ def run_baseline_robustness(model, tokenizer, datasets, seeds=[42, 123, 999], li
         if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
 
         for name, data in datasets.items():
-            # 使用 eval_generation_metrics 进行准确率和流利度评估
+            # Use eval_generation_metrics for accuracy and fluency evaluation
             metrics = eval_generation_metrics(model, tokenizer, data, name, limit=limit, batch_size=32)
             print(f"   {name:<8}: Acc={metrics['acc']:>5.2f}% | Flu={metrics['flu']:>4.2f}")
 
@@ -775,7 +777,7 @@ def run_baseline_robustness(model, tokenizer, datasets, seeds=[42, 123, 999], li
 
 def collect_tsne_data(model, tokenizer, datasets, layer, limit=200, output_dir="tsne_data"):
     """
-    收集数据跑 t-SNE 图的工具函数
+    Utility function for collecting data to produce t-SNE plots.
     """
     os.makedirs(output_dir, exist_ok=True)
     print(f"\n🎨 Collecting t-SNE Data (L{layer})...")
@@ -785,19 +787,19 @@ def collect_tsne_data(model, tokenizer, datasets, layer, limit=200, output_dir="
     for label, data in datasets.items():
         print(f"   -> Processing {label} ({len(data[:limit])} samples)...")
 
-        # 清洗数据，提取文本
+        # Clean data and extract text
         clean_texts = []
         for item in data[:limit]:
             if isinstance(item, tuple):
-                clean_texts.append(item[0])  # 取 Question 或 Sentence
+                clean_texts.append(item[0])  # Take the Question or Sentence
             else:
                 clean_texts.append(item)
 
-        # 复用已有的 get_hidden_states 函数
-        # 注意：get_hidden_states 返回的是 numpy array [N, Hidden_Dim]
+        # Reuse the existing get_hidden_states function
+        # Note: get_hidden_states returns a numpy array [N, Hidden_Dim]
         states = get_hidden_states(model, tokenizer, clean_texts, layer, limit=limit)
 
-        # 封装数据
+        # Package the data
         for i, vec in enumerate(states):
             all_records.append({
                 "label": label,
@@ -822,8 +824,8 @@ def capture_trajectory_states(model, tokenizer, prompts, layer, label):
 def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, rema_type, rema_k, mom2_k, seed,
                         target_methods=None, target_scales=None, verbose=False):
     """
-    封装单次实验逻辑
-    新增参数 target_methods: list, 指定只跑哪些方法 (用于去重)
+    Encapsulate a single experiment run.
+    New parameter target_methods: list, specify which methods to run (for deduplication).
     """
     torch.manual_seed(seed)
     random.seed(seed)
@@ -841,24 +843,26 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
     matrices = {}
 
     def find_rema():
-        # 🔍 V2: 增强版搜索，显式排除 spectral 分析文件
+        # Enhanced search that explicitly excludes spectral analysis files
         if not os.path.exists(args.rema_dir): return None
 
         candidates = []
         for root, _, files in os.walk(args.rema_dir):
             for file in files:
-                # 必须包含 rema, math/gsm8k, L16 这些关键词
+                # Must contain rema, math/gsm8k, L16 keywords
                 if file.endswith(".pt") and all(str(k) in file for k in ["rema", rema_type, f"L{layer}"]):
 
-                    # 🛑 核心修复：如果您生成过谱分析图，文件夹里会有 spectral 文件
-                    # 必须跳过它们，否则会读到只有 eigenvalues 的小文件 -> 导致报错
+                    # Core fix: If you've generated spectral analysis plots before,
+                    # the folder will contain spectral files.
+                    # They must be skipped, otherwise we'd read a small file with
+                    # only eigenvalues and trigger an error.
                     if "spectral" in file:
                         continue
 
                     candidates.append(os.path.join(root, file))
 
         if not candidates: return None
-        # 按文件名长度排序，通常最短的是源文件
+        # Sort by file name length; usually the shortest one is the source file
         candidates.sort(key=len)
         return candidates[0]
 
@@ -867,24 +871,24 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
         if path: return path
         return find_file(args.mom2_dir, [f"L{layer}"], ".pt", strict=True)
 
-    # --- 1. 按需加载矩阵 (节省 IO) ---
-    # 如果 target_methods 指定了，就只加载需要的矩阵
-    # 默认跑所有方法
+    # --- 1. Load matrices on demand (save I/O) ---
+    # If target_methods is specified, only load the required matrices.
+    # Otherwise, default to running all methods.
     methods_to_run = target_methods if target_methods else ['Random', 'MOM2_Rand', 'MOM2_Self', 'REMA', 'Hybrid']
 
-    # REMA / Hybrid 需要 REMA 矩阵
+    # REMA / Hybrid need the REMA matrix
     if 'REMA' in methods_to_run or 'Hybrid' in methods_to_run:
         matrices['REMA'] = get_matrix_with_cache(args.cache_dir, "rema", rema_type, layer, rema_k,
                                                  model.device, target_shape, find_rema)
 
-    # MOM2 / Hybrid 需要 MOM2 矩阵
+    # MOM2 / Hybrid need the MOM2 matrix
     if any(m in methods_to_run for m in ['MOM2_Rand', 'MOM2_Self', 'Hybrid']):
         mom2_path = find_mom2_wrapper()
         if mom2_path and mom2_path.endswith(".npz"):
             d = np.load(mom2_path)
             data_mom2 = {k: torch.from_numpy(v) for k, v in d.items() if v.dtype.kind in {'f', 'i'}}
         else:
-            data_mom2 = torch.load(mom2_path, map_location='cpu')  # 暂时加载到CPU
+            data_mom2 = torch.load(mom2_path, map_location='cpu')  # Load to CPU first
 
         V_mom2_raw = extract_top_k_components(data_mom2, mom2_k, model.device)
         del data_mom2;
@@ -911,7 +915,7 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
             matrices['MOM2_Self'] = F.normalize(u_wiki, dim=0).unsqueeze(1) @ F.normalize(v_wiki_dev, dim=0).unsqueeze(
                 0)
 
-    # Hybrid 需要两者
+    # Hybrid needs both
     if 'Hybrid' in methods_to_run:
         _orig_args = (args.rema_type, args.rema_k, args.mom2_k)
         args.rema_type, args.rema_k, args.mom2_k = rema_type, rema_k, mom2_k
@@ -925,7 +929,7 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
         matrices['Random'] = torch.randn(target_shape, device=model.device)
 
     if 'Ablation_RandCov' in methods_to_run or 'Ablation_RandVec' in methods_to_run:
-        # 1. 加载真实的 REMA U (4096, k)
+        # 1. Load the real REMA U (4096, k)
         rema_path = find_file(args.rema_dir, ["rema", rema_type, f"L{layer}"], ".pt")
         if rema_path:
             d_r = torch.load(rema_path, map_location=model.device)
@@ -935,7 +939,7 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
         else:
             U_real = torch.randn(target_shape[0], rema_k, device=model.device)  # Fallback
 
-        # 2. 加载真实的 MOM2 V (14336, k)
+        # 2. Load the real MOM2 V (14336, k)
         mom2_path = find_mom2_wrapper()
         if mom2_path:
             if mom2_path.endswith(".npz"):
@@ -945,11 +949,11 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
                 d_m = torch.load(mom2_path, map_location=model.device)
             V_real = extract_top_k_components(d_m, mom2_k, model.device)
 
-            # 1. 严格转置逻辑：只有当第1维是目标维度时才转置
+            # 1. Strict transpose logic: only transpose when dim 1 is the target dimension
             if V_real.shape[0] != target_shape[1] and V_real.shape[1] == target_shape[1]:
                 V_real = V_real.T
 
-            # 2. 强制维度检查：防止 [128, 128] 这种错误形状混过去
+            # 2. Enforce dimension check: prevent shapes like [128, 128] from slipping through
             if V_real.shape[0] != target_shape[1]:
                 print(
                     f"   ⚠️ Warning: V_real shape mismatch {V_real.shape}, expected dim0={target_shape[1]}. Replacing with Randn.")
@@ -959,23 +963,23 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
         else:
             V_real = torch.randn(target_shape[1], mom2_k, device=model.device)  # Fallback
 
-        # 确保秩一致
+        # Ensure consistent rank
         rank = min(U_real.shape[1], V_real.shape[1])
         U_real = U_real[:, :rank]
         V_real = V_real[:, :rank]
 
-        # --- 构造 Ablation 矩阵 ---
+        # --- Construct Ablation Matrices ---
 
         # Case A: MOM2_Rand (Random Covariance) -> Real REMA @ Random V
-        # 证明: 必须去除非随机的语法噪音 (Random V 代表随机噪音方向)
+        # Hypothesis: Non-random syntactic noise must be removed (Random V represents random noise directions)
         if 'Ablation_RandCov' in methods_to_run:
             V_rand = torch.randn_like(V_real)
-            # 正交化以模拟真实的基
+            # Orthogonalize to mimic a real basis
             V_rand, _ = torch.linalg.qr(V_rand)
             matrices['Ablation_RandCov'] = U_real @ V_rand.T
 
         # Case B: Directionless REMA (Random Vector) -> Random U @ Real MOM2
-        # 证明: 必须有明确的推理方向 (Random U 代表无方向)
+        # Hypothesis: There must be a clear reasoning direction (Random U represents no direction)
         if 'Ablation_RandVec' in methods_to_run:
             U_rand = torch.randn_like(U_real)
             U_rand, _ = torch.linalg.qr(U_rand)
@@ -985,7 +989,7 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
     for k, v in matrices.items(): matrices[k] = v / (v.norm() + 1e-8)
 
     # --- Eval Loop ---
-    # Debug 模式只跑少量 Scale，正式实验跑全部
+    # Debug mode runs only a few scales; full experiments run all scales
     #scales = [0.05]
     if target_scales:
         scales = target_scales
@@ -993,7 +997,7 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
         scales = [0.05, 0.10, 0.15]
     weight_norm = param.norm().item()
 
-    # 打印表头
+    # Print table header
     print(f"{'-' * 110}")
     headers = [f"{k[:6]}" for k in datasets.keys()]
     print(f"Scale  | Method   | " + " | ".join([f"{h:<20}" for h in headers]))
@@ -1011,8 +1015,8 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
 
             if verbose:
                 print(f"\n   👀 [VERBOSE] Generating examples for {method} @ Scale {scale}...")
-                # 调用文件头部定义的 run_debug_generation
-                # 它会打印 DEBUG_PROMPTS 定义的 5 个 GSM8K 和 5 个 MATH 例子
+                # Call the run_debug_generation defined at the top of this file.
+                # It prints the 5 GSM8K and 5 MATH examples defined in DEBUG_PROMPTS.
                 run_debug_generation(model, tokenizer, layer, method, scale)
 
             results_str = []
@@ -1020,8 +1024,8 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
                 if name == 'BLiMP':
                     res = f"{eval_accuracy(model, tokenizer, data):.2f}%"
                 else:
-                    # 🔥 修改点：使用 args.probe_limit 和 batch_size=16 (确保速度)
-                    # 如果你显存大，可以把 batch_size 改成 32
+                    # Change: use args.probe_limit and batch_size=16 (for speed)
+                    # If you have large GPU memory, consider changing batch_size to 32
                     gen_metrics = eval_generation_metrics(model, tokenizer, data, name, limit=args.probe_limit,
                                                           batch_size=32)
                     curr_lp = eval_logprob(model, tokenizer, data)
@@ -1041,18 +1045,18 @@ def run_experiment_step(model, tokenizer, datasets, base_scores, args, layer, re
 
 def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42):
     """
-    🎨 Main Figure Data Collector (Experimental Replica Version)
-    严格复刻 run_experiment_step 的注入逻辑：
+    Main Figure Data Collector (Experimental Replica Version).
+    Strictly replicates the injection logic of run_experiment_step:
     1. Target: mlp.down_proj (4096 -> 14336)
-    2. MOM2 Matrix: 强制识别为 14336 维 (V)
-    3. REMA Matrix: 识别为 4096 维 (U)
+    2. MOM2 Matrix: forced identification as 14336-dimensional (V)
+    3. REMA Matrix: identified as 4096-dimensional (U)
     """
     print(f"\n{'=' * 80}")
     print(f"🎨 RUNNING MAIN FIGURE CAPTURE (Layer {layer}, Seed {seed})")
     print(f"{'=' * 80}")
 
     # ==========================================================================
-    # 1. 准备 Prompts
+    # 1. Prepare Prompts
     # ==========================================================================
     capture_limit = 200
     target_tasks_lower = ['gsm8k', 'math']
@@ -1090,19 +1094,19 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
     rema_type = 'math'
     scale = 0.1
 
-    # 🎯 回归原始实验目标：down_proj
+    # Return to the original experiment target: down_proj
     layer_name = f"model.layers.{layer}.mlp.down_proj"
 
     try:
         W_old = nethook.get_parameter(model, f"{layer_name}.weight")
-        print(f"   -> Target Weight ({layer_name}): {W_old.shape}")  # 应为 [4096, 14336]
+        print(f"   -> Target Weight ({layer_name}): {W_old.shape}")  # Should be [4096, 14336]
         target_in_dim = W_old.shape[1]  # 14336
     except LookupError:
         print(f"❌ Layer {layer_name} not found.")
         return
 
     # ==========================================================================
-    # (A) Load MOM2 (V) - 必须是 14336 维
+    # (A) Load MOM2 (V) - Must be 14336-dimensional
     # ==========================================================================
     print(f"\n   -> 🔍 Locating MOM2 Matrix (k={mom2_k})...")
     search_strategies = [["mom2", str(layer)], ["wikipedia", f"L{layer}"], ["wiki", f"L{layer}"], [f"L{layer}"]]
@@ -1122,12 +1126,12 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
         else:
             raw_mom2 = torch.load(mom2_path, map_location=model.device)
 
-        # 提取 k 个分量
+        # Extract k components
         V_mom2 = extract_top_k_components(raw_mom2, mom2_k, model.device)
 
-        # 🔥 关键：确保 V 是 [14336, k]
-        # 如果是 [k, 14336]，转置
-        # 如果是 [4096, k]，说明加载了错误的矩阵（Hidden），无法用于 down_proj
+        # Key: Ensure V is [14336, k]
+        # If it's [k, 14336], transpose.
+        # If it's [4096, k], we loaded the wrong matrix (Hidden) and it cannot be applied to down_proj.
         if V_mom2.shape[0] != target_in_dim and V_mom2.shape[1] == target_in_dim:
             V_mom2 = V_mom2.T
 
@@ -1144,7 +1148,7 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
         return
 
     # ==========================================================================
-    # (B) Load REMA (U) - 必须是 4096 维
+    # (B) Load REMA (U) - Must be 4096-dimensional
     # ==========================================================================
     print(f"   -> 🔍 Locating REMA Matrix (Type={rema_type}, k={rema_k})...")
     rema_path = find_file(args.rema_dir, ["rema", rema_type, f"L{layer}"], ".pt", strict=False)
@@ -1153,7 +1157,7 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
     try:
         raw_rema = torch.load(rema_path, map_location=model.device)
         U_rema = extract_top_k_components(raw_rema, rema_k, model.device)
-        # 确保 U 是 [4096, k]
+        # Ensure U is [4096, k]
         if U_rema.shape[0] != 4096 and U_rema.shape[1] == 4096: U_rema = U_rema.T
         U_rema = U_rema[:, :rema_k].float()
         print(f"      U_rema Shape: {U_rema.shape} (Correct for output dim)")
@@ -1166,10 +1170,10 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
     # ==========================================================================
     print(f"\n📸 Capturing State: [MOM2_Self] (scale={scale})...")
 
-    # 逻辑：Delta = scale * (W @ V) @ V.T
+    # Logic: Delta = scale * (W @ V) @ V.T
     # [4096, 14336] @ [14336, k] -> [4096, k]
     # [4096, k] @ [k, 14336] -> [4096, 14336]
-    # 这样就能加上去了
+    # This produces a delta that can be added to the weight matrix
 
     W_V = W_old.to(torch.float32) @ V_mom2
     delta_mom2 = scale * (W_V @ V_mom2.T)
@@ -1190,7 +1194,7 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
 
     eff_scale = -scale if rema_type == 'gsm8k' else scale
 
-    # 逻辑：Delta = scale * (U @ V.T)
+    # Logic: Delta = scale * (U @ V.T)
     # [4096, k] @ [k, 14336] -> [4096, 14336]
     delta_hybrid = eff_scale * (U_h @ V_h.T)
     delta_hybrid = delta_hybrid.to(dtype=W_old.dtype, device=W_old.device)
@@ -1210,7 +1214,7 @@ def run_main_figure_capture(model, tokenizer, datasets, args, layer=16, seed=42)
     torch.save(capture_results, save_path)
     print(f"\n✅ Main Figure Data Saved Successfully!")
 # ==============================================================================
-# 📊 Eval Wrappers
+# Eval Wrappers
 # ==============================================================================
 def eval_logprob(model, tokenizer, data):
     total = 0;
@@ -1262,7 +1266,7 @@ def get_hidden_states(model, tokenizer, data, layer, limit=200):
 
     with torch.no_grad():
         for i, item in enumerate(tqdm(data[:limit], desc="Collecting")):
-            # --- 1. 数据清洗 ---
+            # --- 1. Data cleaning ---
             try:
                 if isinstance(item, tuple):
                     text = item[0]
@@ -1270,13 +1274,13 @@ def get_hidden_states(model, tokenizer, data, layer, limit=200):
                     text = item
 
                 if not isinstance(text, str):
-                    # 跳过非文本数据
+                    # Skip non-text data
                     continue
 
                 prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{text}<|eot_id|>"
                 inp = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-                # --- 2. 捕获 hidden states ---
+                # --- 2. Capture hidden states ---
                 with nethook.Trace(model, f"model.layers.{layer}") as ret:
                     _ = model(**inp)
 
@@ -1284,27 +1288,27 @@ def get_hidden_states(model, tokenizer, data, layer, limit=200):
                         print(f"❌ Error: nethook failed to capture layer {layer} output.")
                         continue
 
-                    # 🔥 修复核心：智能判断 output 类型
+                    # Core fix: Intelligently determine the output type
                     output_obj = ret.output
 
-                    # 情况 A: 如果是元组 (Standard HF)，取第一个元素
+                    # Case A: If it's a tuple (Standard HF), take the first element
                     if isinstance(output_obj, tuple):
                         output_tensor = output_obj[0]
                     else:
-                        # 情况 B: 如果直接是张量
+                        # Case B: If it's directly a tensor
                         output_tensor = output_obj
 
-                    # 转 CPU 以便处理
+                    # Move to CPU for processing
                     output_tensor = output_tensor.detach().cpu()
 
-                    # --- 3. 提取 Last Token ---
-                    # 现在的 output_tensor 可能是 (1, Seq, Dim) 也可能是 (Seq, Dim)
+                    # --- 3. Extract the Last Token ---
+                    # output_tensor could be (1, Seq, Dim) or (Seq, Dim)
 
                     if output_tensor.ndim == 3:
-                        # 形状: [Batch=1, Seq, Dim] -> 取 [0, -1, :]
+                        # Shape: [Batch=1, Seq, Dim] -> take [0, -1, :]
                         hs = output_tensor[0, -1, :].numpy()
                     elif output_tensor.ndim == 2:
-                        # 形状: [Seq, Dim] -> 取 [-1, :]
+                        # Shape: [Seq, Dim] -> take [-1, :]
                         hs = output_tensor[-1, :].numpy()
                     else:
                         print(f"⚠️ Unexpected shape {output_tensor.shape} at index {i}")
@@ -1314,7 +1318,7 @@ def get_hidden_states(model, tokenizer, data, layer, limit=200):
 
             except Exception as e:
                 print(f"\n❌ Error processing sample {i}: {e}")
-                # 为了不中断整个程序，这里 continue 而不是 break
+                # Continue instead of break to avoid interrupting the whole program
                 continue
 
     return np.array(states)
@@ -1322,7 +1326,7 @@ def get_hidden_states(model, tokenizer, data, layer, limit=200):
 
 
 # ==============================================================================
-# 🚀 MAIN
+# MAIN
 # ==============================================================================
 def main():
     args = parse_args()
@@ -1362,7 +1366,7 @@ def main():
         print(f"   {name:<8}: {s:.4f}")
 
     # =========================================================================
-    # 🔄 MAIN EXPERIMENT LOOP
+    # MAIN EXPERIMENT LOOP
     # =========================================================================
 
     for seed in args.seeds:
@@ -1370,21 +1374,21 @@ def main():
 
         # -------------------------------------------------------------
         # Exp 1: GSM8K Sweep (MOM2=128 Fixed)
-        # 变化量: REMA Rank (k)
-        # 固定量: MOM2 (一直也是 k=128)
-        # 优化策略: 这一轮只跑 REMA 和 Hybrid，MOM2 跑一次基准或者看 Exp3 即可
+        # Variable: REMA Rank (k)
+        # Fixed: MOM2 (always k=128)
+        # Optimization: Only run REMA and Hybrid this round; run MOM2 once as baseline or check Exp 3
         # -------------------------------------------------------------
         if args.run_gsm8k_sweep:
             print(f"\n>>> [Seed {seed}] Task 1: GSM8K Rank Sweep (Methods: REMA, Hybrid)")
             for k in [1, 16, 64, 128]:
-                # target_methods 只包含受 k 影响的方法
+                # target_methods only contains methods affected by k
                 run_experiment_step(model, tokenizer, datasets, base_scores, args,
                                     args.layer, 'gsm8k', k, 128, seed,
                                     target_methods=['Hybrid'], target_scales=[0.2])
 
                 # -------------------------------------------------------------
         # Exp 2: MATH Sweep (MOM2=128 Fixed)
-        # 优化策略: 同上，只跑 REMA 和 Hybrid
+        # Optimization: Same as above, only run REMA and Hybrid
         # -------------------------------------------------------------
         if args.run_math_sweep:
             print(f"\n>>> [Seed {seed}] Task 2: MATH Rank Sweep (Methods: REMA, Hybrid)")
@@ -1395,21 +1399,21 @@ def main():
 
         # -------------------------------------------------------------
         # Exp 3: MOM2 Sweep (REMA Fixed)
-        # 变化量: MOM2 Rank (k)
-        # 固定量: REMA
-        # 优化策略: 这一轮跑 MOM2系列 和 Hybrid，REMA 是固定的没必要跑 8 遍
+        # Variable: MOM2 Rank (k)
+        # Fixed: REMA
+        # Optimization: Run the MOM2 family and Hybrid this round; REMA is fixed so no need to run it 8 times
         # -------------------------------------------------------------
         if args.run_mom2_sweep:
             print(f"\n>>> [Seed {seed}] Task 3: MOM2 Rank Sweep (Dual Configs)")
 
-            # 1. Fix MATH=64, Sweep MOM2 (现有实验)
+            # 1. Fix MATH=64, Sweep MOM2 (existing experiment)
             print(f"   >>> Sub-task 3.1: REMA=math (k=64)")
             for k in [1, 16, 64, 128]:
                 run_experiment_step(model, tokenizer, datasets, base_scores, args,
                                     args.layer, 'gsm8k', 128, k, seed, target_methods=['Hybrid', 'MOM2_Self'], target_scales=[0.2])
 
-            # 2. Fix GSM8K=64, Sweep MOM2 (新增实验!)
-            # 我们选择 k=64 作为 GSM8K 的固定秩 (因为它在 Exp 1 中表现优异且稳定)
+            # 2. Fix GSM8K=64, Sweep MOM2 (new experiment!)
+            # We choose k=64 as the fixed rank for GSM8K (it performed well and stably in Exp 1)
             print(f"   >>> Sub-task 3.2: REMA=gsm8k (k=64)")
             for k in [1, 16, 64]:
                 run_experiment_step(model, tokenizer, datasets, base_scores, args,
@@ -1417,8 +1421,8 @@ def main():
 
         # -------------------------------------------------------------
         # Exp 4: Layer Sweep (L6, L16, L26)
-        # 变化量: Layer (层变了，所有矩阵都变了)
-        # 优化策略: 必须全跑
+        # Variable: Layer (when the layer changes, all matrices change)
+        # Optimization: Must run everything
         # -------------------------------------------------------------
         if args.run_layer_sweep:
             print(f"\n>>> [Seed {seed}] Task 4: Layer Sweep (All Methods)")
@@ -1437,7 +1441,7 @@ def main():
         if args.run_debug:
             print(f"\n⚡⚡⚡ DEBUG MODE ACTIVATED: Printing Full Generations ⚡⚡⚡")
 
-            # 1. 自动判断模型类型并设置 Alpha (Scale)
+            # 1. Auto-detect model type and set Alpha (Scale)
             # Qwen -> 0.2, Llama -> 0.05
             model_id = args.model_path.lower()
             if "qwen" in model_id:
@@ -1447,40 +1451,40 @@ def main():
                 target_scale = [0.05]
                 print(f"🦙 Detected Llama/Other: Setting Alpha (Scale) = 0.05")
 
-            # 2. 强制设定用户要求的参数
+            # 2. Force the user-requested parameters
             debug_layer = 16
-            debug_mom2_k = 128  # 固定 MOM2 秩
-            debug_rema_k = 16  # 固定 REMA 秩 (Logic Sparsity)
+            debug_mom2_k = 128  # Fixed MOM2 rank
+            debug_rema_k = 16  # Fixed REMA rank (Logic Sparsity)
             debug_seed = args.seeds[0] if args.seeds else 42
 
             print(f"⚙️  Config: Layer={debug_layer} | k_rema={debug_rema_k} | k_mom2={debug_mom2_k}")
 
-            # 3. 执行任务 A: GSM8K (Hybrid) + MOM2 Baseline
+            # 3. Run task A: GSM8K (Hybrid) + MOM2 Baseline
             print(f"\n>>> [DEBUG JOB 1] GSM8K Configuration & MOM2 Baseline")
             run_experiment_step(
                 model, tokenizer, datasets, base_scores, args,
                 layer=debug_layer,
-                rema_type='math',  # 指定使用 GSM8K 的 REMA 矩阵
+                rema_type='math',  # Use GSM8K's REMA matrix
                 rema_k=debug_rema_k,  # k=16
                 mom2_k=debug_mom2_k,  # k=128
                 seed=debug_seed,
                 target_methods=['Hybrid', 'MOM2_Self'],
                 target_scales=target_scale,
-                verbose=True  # <--- 🔥 关键：开启详细打印
+                verbose=True  # <--- Key: Enable verbose printing
             )
 
-            # 4. 执行任务 B: MATH (Hybrid)
+            # 4. Run task B: MATH (Hybrid)
             print(f"\n>>> [DEBUG JOB 2] MATH Configuration")
             run_experiment_step(
                 model, tokenizer, datasets, base_scores, args,
                 layer=debug_layer,
-                rema_type='math',  # 指定使用 MATH 的 REMA 矩阵
+                rema_type='math',  # Use MATH's REMA matrix
                 rema_k=debug_rema_k,  # k=16
                 mom2_k=debug_mom2_k,  # k=128
                 seed=debug_seed,
                 target_methods=['Hybrid'],
                 target_scales=target_scale,
-                verbose=True  # <--- 🔥 关键：开启详细打印
+                verbose=True  # <--- Key: Enable verbose printing
             )
 
             print("\n✅ Debug run completed. Exiting.")
@@ -1489,7 +1493,7 @@ def main():
 
         if args.run_ablation:
             print(f"\n>>> [Seed {seed}] Task Ablation: RandCov vs RandVec")
-            # 调用最佳配置: L16, Scale 0.05, GSM-64, MOM2-128
+            # Use the best configuration: L16, Scale 0.05, GSM-64, MOM2-128
             run_experiment_step(model, tokenizer, datasets, base_scores, args,
                                 layer=16, rema_type='gsm8k', rema_k=16, mom2_k=128, seed=seed,
                                 target_methods=['Hybrid', 'Ablation_RandCov', 'Ablation_RandVec'],
@@ -1499,14 +1503,14 @@ def main():
                                 layer=16, rema_type='math', rema_k=16, mom2_k=128, seed=seed,
                                 target_methods=['Hybrid', 'Ablation_RandCov', 'Ablation_RandVec'],
                                 target_scales=[0.0, 0.05, 0.10, 0.15])
-            # Ablation 建议只看一个 Scale
+            # Ablation is best viewed at a single Scale
 
             # -------------------------------------------------------------
-            # 🎨 Task: Main Figure Capture (受 --run_capture 控制)
-            # 只在 Seed 42 跑一次
+            # Task: Main Figure Capture (controlled by --run_capture)
+            # Only run once with Seed 42
             # -------------------------------------------------------------
         if seed == 42 and args.run_capture:
-            # 确保有 MQuAKE 数据 (如果没有加载，为了不报错可以跳过或做个假数据检查)
+            # Ensure MQuAKE data exists (skip or do a dummy check if not loaded, to avoid crashes)
             if 'mquake' not in datasets:
                 print("⚠️ Warning: MQuAKE dataset missing for capture task.")
 

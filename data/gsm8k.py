@@ -22,8 +22,8 @@ class GSM8KDataset(Dataset):
         for i, record in enumerate(raw):
             item = {
                 "case_id": i,
-                "question": record["question"],  # 原始问题
-                "answer": record["answer"],  # 纯数字答案 (e.g., "42")
+                "question": record["question"],  # Raw question text
+                "answer": record["answer"],  # Numeric answer string (e.g., "42")
                 "prompt": get_llama_prompt(record["question"]) if "Llama-3" in model_name else record["question"]
             }
             data.append(item)

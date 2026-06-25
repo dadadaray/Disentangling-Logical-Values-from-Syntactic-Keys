@@ -9,16 +9,15 @@ import numpy as np
 import argparse
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# 引入项目中的工具函数 (根据你的项目结构调整 import)
-# 假设这些在你的 util 和 rome 文件夹里
+# Import project utility functions (adjust path to your project structure)
+# Assumes these reside under utils/ and rome/ directories
 try:
     from utils import nethook
-    # 你原来的代码里有 load_blimp_local 等函数，这里需要把它们加上
-    # 为了保证能跑，请确保这里包含了 load_blimp_local 和 extract_syntax_activations 的定义
-    # 或者 import 进来
+    # The original code uses load_blimp_local etc. — make sure they are defined here.
+    # To keep things runnable, either import them or copy the definitions inline.
     from pipeline.step3_verification.spectrum_blimp_mom2 import load_blimp_local, extract_syntax_activations, BLIMP_PARADIGMS
 except ImportError:
-    # 如果 import 失败，请把那两个辅助函数直接复制粘贴到这个文件里
+    # If the import fails, copy the two helper functions directly into this file
     print(
         "Warning: Could not import helper functions. Please ensure analyze_spectrum.py is accessible or copy the helper functions here.")
     pass
@@ -41,11 +40,11 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
 
-    # 2. Load REMA Matrix (替代原本的 Eigen decomposition)
+    # 2. Load REMA Matrix (instead of the original Eigen decomposition)
     print(f"Loading REMA matrix from {args.rema_path}...")
     rema_data = torch.load(args.rema_path, map_location="cpu")
 
-    # [关键] 直接提取 V 矩阵作为投影基
+    # [Critical] Extract the V matrix directly as the projection basis
     if 'projection_matrix' in rema_data:
         eigvecs = rema_data['projection_matrix'].float().to(device)  # [Hidden, k]
     else:
@@ -53,7 +52,7 @@ def main():
 
     print(f"REMA V (Eigvecs) shape: {eigvecs.shape}")
 
-    # [关键] 提取 REMA 的特征值 (用于画红线)
+    # [Critical] Extract REMA eigenvalues (for the red reference line in plots)
     if 'S' in rema_data:
         eigvals = (rema_data['S'].float() ** 2).to('cpu')
     elif 'eigenvalues' in rema_data:
@@ -73,7 +72,7 @@ def main():
     layer_name = f"model.layers.{args.layer}"
     print(f"Extracting syntax activations from {layer_name}...")
 
-    # 确保 extract_syntax_activations 可用
+    # Ensure extract_syntax_activations is available
     syntax_matrix = extract_syntax_activations(
         model,
         tokenizer,
@@ -93,7 +92,7 @@ def main():
         for i in range(0, num_samples, chunk_size):
             chunk = syntax_matrix[i: i + chunk_size].float()
 
-            # 投影: [Batch, Hidden] @ [Hidden, k] -> [Batch, k]
+            # Projection: [Batch, Hidden] @ [Hidden, k] -> [Batch, k]
             proj_chunk = chunk @ eigvecs
 
             energy_chunk = proj_chunk ** 2

@@ -92,7 +92,7 @@ def layer_stats(
         stats_dir,
         ds_name,
         to_collect,
-        all_eval_data=None,  # 新增可选参数，只在 RECT 时使用
+        all_eval_data=None,  # New optional parameter, only used during RECT
         model_name=None,
         sample_size=None,
         precision=None,
@@ -105,38 +105,38 @@ def layer_stats(
     Function to load or compute cached stats.
     """
 
-    # 辅助函数：安全地获取模型名称
+    # Helper function: safely get the model name
     def _get_safe_model_name(model):
-        # 将模型路径中的特殊字符替换为 '_'，用于文件名
+        # Replace special characters in the model path with '_' for use in filenames
         return model.config._name_or_path.replace("/", "_").replace("-", "_").replace(".", "_")
 
     # ----------------------------------------------------
-    # 最终修正的 get_ds 函数
+    # Final corrected get_ds function
     # ----------------------------------------------------
     def get_ds(hparams, tokenizer, model, batch_tokens=None, ds_name=None):
         # ----------------------------------------------------
-        # 错误修复：从 ds_name 参数中获取数据集名称
+        # Bug fix: get the dataset name from the ds_name parameter
         # ----------------------------------------------------
         if ds_name is None:
-            # 如果 ds_name 没有被明确传入，则回退到尝试从 hparams 中获取 (保持兼容性)
+            # If ds_name was not explicitly passed, fall back to trying to get it from hparams (backward compatibility)
             if hasattr(hparams, 'dataset'):
                 ds_name = hparams.dataset
             else:
-                # 如果 hparams 也没有 'dataset' 属性，则硬编码为 'wikipedia'（或抛出错误）
-                # 因为 MOM2 统计默认使用 wikipedia
+                # If hparams also lacks a 'dataset' attribute, hardcode to 'wikipedia' (or throw an error)
+                # Because MOM2 stats default to using wikipedia
                 ds_name = "wikipedia"
                 print("[Warning] 'dataset' name not found in hparams or arguments. Defaulting to 'wikipedia'.")
 
-        # ... [函数主体：原先的 ds_name = hparams.dataset 这一行现在被 ds_name 变量取代] ...
+        # ... [Function body: the original line ds_name = hparams.dataset is now replaced by the ds_name variable] ...
 
-        # ... [在函数主体中，继续使用 ds_name 变量，例如：] ...
+        # ... [In function body, continue using ds_name variable, e.g.:] ...
         OOM_SAFE_MAXLEN = 4096
 
         # ----------------------------------------------------
-        # 1. Maxlen 确定逻辑 (必须最先运行，以确定 CHUNK_SIZE)
+        # 1. Maxlen determination logic (must run first, to determine CHUNK_SIZE)
         # ----------------------------------------------------
 
-        # 原始逻辑：从模型配置中获取 maxlen
+        # Original logic: get maxlen from model config
         if hasattr(model.config, 'n_positions'):
             maxlen = model.config.n_positions
         elif hasattr(model.config, 'max_sequence_length'):
@@ -146,61 +146,61 @@ def layer_stats(
         elif hasattr(model.config, 'seq_length'):
             maxlen = model.config.seq_length
         else:
-            raise NotImplementedError("无法从模型配置中确定 maxlen。")
+            raise NotImplementedError("Unable to determine maxlen from model config.")
 
-        # 最终覆盖：如果原始 maxlen 大于安全限制，则强制使用安全限制
+        # Final override: if original maxlen exceeds the safe limit, force it to the safe limit
         if maxlen > OOM_SAFE_MAXLEN:
             #is_llama_clamped = True
             maxlen = OOM_SAFE_MAXLEN
-            print(f"[Info] 🚨 强制 maxlen 降为 OOM 限制值: {maxlen}")
+            print(f"[Info] 🚨 Force maxlen down to OOM safe limit: {maxlen}")
 
-        # 应用 batch_tokens 限制
+        # Apply batch_tokens limit
         if batch_tokens is not None and batch_tokens < maxlen:
             maxlen = batch_tokens
 
-        CHUNK_SIZE = maxlen  # 最终的 chunk/sequence 长度
+        CHUNK_SIZE = maxlen  # Final chunk/sequence length
 
         # ----------------------------------------------------
-        # 2. 动态生成模型和 Chunk Size 相关的缓存路径
+        # 2. Dynamically generate model- and chunk-size-dependent cache path
         # ----------------------------------------------------
         model_name_safe = _get_safe_model_name(model)
         ds_name = ds_name
         #chunked_path = CHUNK_CACHE_BASE_DIR / f"{ds_name}_{model_name_safe}_{CHUNK_SIZE}"
         # ----------------------------------------------------
-        # 4. 缓存未命中：加载原始数据集
+        # 4. Cache miss: load raw dataset
         # ----------------------------------------------------
         valid_mom2_datasets = ["wikipedia", "wikitext"]
         if ds_name not in valid_mom2_datasets:
             print(f"[WARNING] Invalid ds_name '{ds_name}' detected. Forcing to 'wikipedia' for MOM2 stats.")
             ds_name = "wikipedia"
 
-        # ──────────────────────  全新缓存逻辑  ──────────────────────
+        # ──────────────────────  New caching logic  ──────────────────────
         if ds_name == "wikipedia":
             local_path = Path(LOCAL_WIKI_PATH)  # /…/wikipedia
             cache_path = local_path.parent / "wikipedia_cached_dataset"
 
-            # 1. 缓存命中 → 秒级加载
+            # 1. Cache hit: instant load
             if cache_path.exists():
                 print(f"[Cache HIT] Loading merged Wikipedia from {cache_path}")
                 raw_ds_hf = load_from_disk(str(cache_path))
 
-            # 2. 缓存不存在 → 一次性合并所有 parquet → 存缓存
+            # 2. Cache miss: merge all parquet files and save cache
             else:
                 if not local_path.exists():
                     raise FileNotFoundError(f"Local Wikipedia path {local_path} does not exist.")
 
                 print(f"[Cache MISS] Merging {local_path}/*.parquet → {cache_path}")
-                # 一次性读取全部 parquet（datasets 会自动合并）
+                # Read all parquet files at once (datasets auto-merges them)
                 raw_ds_hf = load_dataset(
                     "parquet",
                     data_files=[str(p) for p in local_path.glob("*.parquet")],
                     split="train"
                 )
-                # 保存为 Arrow 格式，下次直接 load_from_disk
+                # Save as Arrow format for fast load_from_disk
                 raw_ds_hf.save_to_disk(str(cache_path))
                 print(f"[Cache SAVED] Merged dataset saved to {cache_path}")
 
-        # ──────────────────────  其它数据集保持不变  ──────────────────────
+        # ──────────────────────  Other datasets unchanged  ──────────────────────
         else:
             config_map = {"wikitext": "wikitext-103-raw-v1"}
             if ds_name == "wikipedia":
@@ -210,18 +210,18 @@ def layer_stats(
                 raise ValueError(f"Invalid ds_name '{ds_name}'. Supported: {list(config_map.keys())}")
             raw_ds_hf = load_dataset(ds_name, config_name, split="train")
         # ----------------------------------------------------
-        # 5. Chunking/缓存生成逻辑
+        # 5. Chunking / cache generation logic
         # ----------------------------------------------------
         ds_source = raw_ds_hf
 
         # ----------------------------------------------------
-        # 6. 返回 TokenizedDataset
+        # 6. Return TokenizedDataset
         # ----------------------------------------------------
         return TokenizedDataset(ds_source, tokenizer, maxlen=CHUNK_SIZE)
 
     # Continue with computation of statistics
     #batch_size = 100  # Examine this many dataset texts at once
-    batch_size = 5# <--- 强制将 DataLoader 批次大小设为 1，确保每一步内存最小化
+    batch_size = 5# <--- Force DataLoader batch size to 1 for minimal memory footprint
     if hasattr(model.config, 'n_positions'):
         npos = model.config.n_positions
     elif hasattr(model.config, 'max_sequence_length'):
@@ -285,9 +285,9 @@ def layer_stats(
                 ) as tr:
                     model(**batch)
                 feats = flatten_masked_batch(tr.input, batch["attention_mask"])
-                # --- OOM 修复：强制释放 Trace 捕获的 GPU 内存 (新增) ---
-                del tr.input  # <--- 显式删除 tr.input
-                tr.input = None  # <--- 确保引用被置空
+                # --- OOM fix: force-release GPU memory captured by Trace ---
+                del tr.input  # <--- Explicitly delete tr.input
+                tr.input = None  # <--- Ensure the reference is nullified
                 # feats = flatten_masked_batch(tr.output, batch["attention_mask"])
                 feats = feats.to(dtype=dtype).cpu()
                 stat.add(feats)

@@ -23,7 +23,7 @@ class MATHDataset(Dataset):
             item = {
                 "case_id": i,
                 "question": record["question"],
-                "answer": record["answer"],  # LaTeX 答案
+                "answer": record["answer"],  # LaTeX-formatted answer
                 "prompt": get_llama_prompt(record["question"]) if "Llama-3" in model_name else record["question"]
             }
             data.append(item)

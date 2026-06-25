@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--dataset_name", type=str, default="custom", help="Name for logging")
     parser.add_argument("--layers", type=int, nargs="+", default=[12, 13, 14, 15, 16])
 
-    # [关键修改] 把 Batch Size 分离出来
+    # [Key change] Separate out Batch Size
     parser.add_argument("--batch_size", type=int, default=1, help="Forward pass batch size (keep small for GPU)")
     parser.add_argument("--probe_limit", type=int, default=50, help="Total number of probe questions to test")
 
@@ -30,7 +30,7 @@ def parse_args():
 
 
 def load_dataset_list(path, limit=50):
-    """加载数据并返回由单个问题组成的列表"""
+    """Load data and return a list of individual questions."""
     print(f"Loading probe data from: {path}")
     if not os.path.exists(path):
         raise FileNotFoundError(f"Dataset not found: {path}")
@@ -69,12 +69,12 @@ def compute_loss(model, inputs):
 
 def measure_sensitivity(model, layer_idx, update_matrix, tokenizer, questions):
     """
-    对一组问题计算平均 Loss 敏感度
+    Compute average Loss sensitivity over a set of questions.
     """
     layer_name = f"model.layers.{layer_idx}.mlp.down_proj"
     weights = nethook.get_parameter(model, f"{layer_name}.weight")
 
-    # 准备扰动向量
+    # Prepare perturbation vector
     d = update_matrix.to(weights.device).to(weights.dtype)
     d_norm = d / (d.norm() + 1e-8)
     scale = weights.norm().item() * 0.01  # epsilon = 1%
@@ -83,10 +83,10 @@ def measure_sensitivity(model, layer_idx, update_matrix, tokenizer, questions):
     total_delta = 0
     count = 0
 
-    # [关键] 逐个问题测试，防止 OOM
-    # 这里的 questions 是一个 list of strings
+    # [Key] Test one question at a time to prevent OOM
+    # questions here is a list of strings
     for q in questions:
-        # 构造单条输入
+        # Construct a single input
         prompts = [
             f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{q}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"]
         inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(
@@ -102,7 +102,7 @@ def measure_sensitivity(model, layer_idx, update_matrix, tokenizer, questions):
         # 3. Restore
         weights.data -= perturbation
 
-        # [关键] 取绝对值！我们需要知道它是否"动了"
+        # [Key] Take the absolute value! We need to know whether it "moved"
         total_delta += abs(l_plus - l0)
         count += 1
 
@@ -127,7 +127,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(args.model_path, device_map="auto", torch_dtype=torch.float16)
 
-    # 1. 加载 50 个问题
+    # 1. Load 50 questions
     questions = load_dataset_list(args.dataset_path, limit=args.probe_limit)
 
     print(f"\n⚔️  Curvature Analysis: {args.dataset_name.upper()} Landscape ⚔️")
@@ -146,7 +146,7 @@ def main():
             print(f"L{layer:<5} | No data found")
             continue
 
-        # 只取前 5 个向量做测试（每个向量测 50 道题，计算量够了）
+        # Only take the first 5 vectors for testing (each vector tests 50 questions, sufficient computation)
         selected_files = raw_files[:5]
 
         layer_raw_sens = 0
@@ -157,12 +157,12 @@ def main():
             if not os.path.exists(f_trim): continue
 
             try:
-                # 测 Raw
+                # Test Raw
                 upd_raw = reconstruct_matrix(f_raw, device=model.device)
                 layer_raw_sens += measure_sensitivity(model, layer, upd_raw, tokenizer, questions)
                 del upd_raw
 
-                # 测 Trim
+                # Test Trim
                 upd_trim = reconstruct_matrix(f_trim, device=model.device)
                 layer_trim_sens += measure_sensitivity(model, layer, upd_trim, tokenizer, questions)
                 del upd_trim
@@ -175,7 +175,7 @@ def main():
 
             torch.cuda.empty_cache()
 
-        # 取平均
+        # Take average
         layer_raw_sens /= len(selected_files)
         layer_trim_sens /= len(selected_files)
 

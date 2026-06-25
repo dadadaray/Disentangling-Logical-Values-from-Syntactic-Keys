@@ -69,13 +69,13 @@ def load_blimp_local(blimp_root, paradigms, max_samples_per_paradigm=300, seed=4
 
 def get_mom2_covariance(model, tok, layer_name, mom2_dataset, sample_n, stats_dir, stats_model_name):
     """
-    计算或加载 MOM2 协方差矩阵。
+    Compute or load the MOM2 covariance matrix.
     """
     print(f"Loading MOM2 for: {layer_name}")
     print(f"Target file suffix expected: _{sample_n}.npz")
 
-    # 强制使用 stats_model_name 作为 model_name 参数
-    # 这样 layer_stats 就会去 stats_dir/stats_model_name/... 下找文件
+    # Force stats_model_name as the model_name parameter
+    # so that layer_stats looks under stats_dir/stats_model_name/...
     stat = layer_stats(
         model,
         tok,
@@ -85,19 +85,19 @@ def get_mom2_covariance(model, tok, layer_name, mom2_dataset, sample_n, stats_di
         to_collect=["mom2"],
         sample_size=sample_n,
         precision="float32",
-        model_name=stats_model_name,  # 关键：对应文件夹名
-        download=False  # 既然本地有，就不要尝试下载
+        model_name=stats_model_name,  # Critical: must match the folder name
+        download=False  # Do not attempt to download since the file exists locally
     )
 
-    # stat.mom2.moment() 返回的是协方差矩阵 C
+    # stat.mom2.moment() returns the covariance matrix C
     C = stat.mom2.moment().float()
     return C
 
 
 def extract_syntax_activations(model, tok, layer_name, sentences, device):
     """
-    提取与 MOM2 相同位置的激活值。
-    对于 .mlp.down_proj，MOM2 统计的是输入 (tr.input)。
+    Extract activations at the same location where MOM2 is computed.
+    For .mlp.down_proj, MOM2 uses the input (tr.input).
     """
     print(f"⚡ Extracting BLiMP activations from input of: {layer_name}...")
     acts = []
@@ -107,16 +107,16 @@ def extract_syntax_activations(model, tok, layer_name, sentences, device):
             text = item['sentence_good']
             inp = tok(text, return_tensors="pt").to(device)
 
-            # 使用 retain_input=True 捕获输入
+            # Use retain_input=True to capture the input
             with nethook.Trace(model, layer_name, retain_input=True) as tr:
                 _ = model(**inp)
 
-                # tr.input 通常是一个 tuple (tensor, )
+                # tr.input is normally a tuple (tensor, )
                 feat = tr.input
                 if isinstance(feat, tuple):
                     feat = feat[0]  # [1, seq_len, dim]
 
-                # 取最后一个 token
+                # Take the last token
                 feat_mean = feat[0, -1, :].cpu()
                 acts.append(feat_mean)
 
@@ -142,12 +142,12 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
 
-    # 【关键修改】构造完整层名以匹配文件名
-    # model.layers.6.mlp.down_proj
+    # [Critical fix] Construct the full layer name to match the file naming convention
+    # e.g. model.layers.6.mlp.down_proj
     layer_name = f"model.layers.{args.layer}.mlp.down_proj"
 
     # 2. Load MOM2 Covariance
-    # 这里的 sample_n 必须是 100000，否则文件名后缀对不上
+    # sample_n must be 100000 here, otherwise the file name suffix won't match
     C = get_mom2_covariance(
         model,
         tokenizer,

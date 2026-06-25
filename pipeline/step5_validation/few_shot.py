@@ -8,7 +8,7 @@ import argparse
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ==============================================================================
-# 🕵️ 诊断题库 (保持与 Debug 模式一致)
+# Diagnostic prompt bank (kept in sync with Debug mode)
 # ==============================================================================
 DEBUG_PROMPTS = {
     "GSM8K (Reasoning)": [
@@ -48,7 +48,7 @@ def main():
     print(f"🚀 Loading Baseline Model: {args.model_path}")
     print(f"{'=' * 60}")
 
-    # 加载模型 (fp16)
+    # Load model (fp16)
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
@@ -62,7 +62,7 @@ def main():
     for category, prompts in DEBUG_PROMPTS.items():
         print(f"\n--- {category} ---")
         for i, prompt_text in enumerate(prompts):
-            # 严格使用 Llama-3 Chat 模板，与实验代码保持一致
+            # Strictly use Llama-3 Chat template, consistent with the experiment code
             full_prompt = (
                 f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
                 f"{prompt_text}"
@@ -74,15 +74,15 @@ def main():
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
-                    max_new_tokens=256,  # 足够看清开头的逻辑
-                    do_sample=False,  # 贪婪解码，确保复现性
+                    max_new_tokens=256,  # Enough tokens to see the beginning of the reasoning
+                    do_sample=False,  # Greedy decoding for reproducibility
                     temperature=0.0,
                     pad_token_id=tokenizer.eos_token_id
                 )
 
             output_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-            # 清洗输出，只看生成的回答
+            # Clean the output to show only the generated answer
             if "Answer:" in output_text:
                 generated = output_text.split("Answer:")[-1].strip()
             elif "Solution:" in output_text:
@@ -92,7 +92,7 @@ def main():
             else:
                 generated = output_text
 
-            # 格式化打印
+            # Format for printing
             clean_text = generated.replace('\n', ' ').replace('\r', '')
             print(f"[{i + 1}] {clean_text}")
 

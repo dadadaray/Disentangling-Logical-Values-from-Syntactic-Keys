@@ -17,9 +17,9 @@ import copy
 def parse_args():
     parser = argparse.ArgumentParser(description="MQuAKE Multi-hop Reasoning Sensitivity Test")
     parser.add_argument("--model_path", type=str, default="/data/users/yanrongen/AnyEdit/LLM-Llama-3-8B-Instruct")
-    # 注意：这里传入的是包含 .pt 文件的文件夹路径
+    # Note: This expects a folder path containing .pt files
     parser.add_argument("--matrix_dir", type=str, required=True, help="Directory containing REMA/Trim vectors")
-    # 这里传入 mquake.json 的路径
+    # This expects the path to mquake.json
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to mquake.json")
     parser.add_argument("--layers", type=int, nargs="+", default=[12, 13, 14, 15, 16])
     parser.add_argument("--probe_limit", type=int, default=100, help="Number of multi-hop cases to test")
@@ -28,7 +28,7 @@ def parse_args():
 
 def load_mquake_data(path, limit=50):
     """
-    针对 MQuAKE 结构加载：(Multi-hop Question, Counterfactual Answer)
+    Load MQuAKE-format data: (Multi-hop Question, Counterfactual Answer).
     """
     print(f"Loading MQuAKE data from: {path}")
     if not os.path.exists(path):
@@ -36,34 +36,34 @@ def load_mquake_data(path, limit=50):
 
     qa_pairs = []
     with open(path, 'r') as f:
-        # MQuAKE 通常是一个大的 List
+        # MQuAKE is typically a large List
         try:
             data = json.load(f)
         except json.JSONDecodeError:
-            # 兼容 jsonl 格式
+            # Compatible with jsonl format
             f.seek(0)
             data = [json.loads(line) for line in f]
 
     for item in data:
         if len(qa_pairs) >= limit: break
 
-        # 1. 获取多跳问题 (Multi-hop Questions)
-        # MQuAKE 的 questions 字段是一个列表，包含同一个意思的不同问法
-        # 我们取第一个即可
+        # 1. Get Multi-hop Questions
+        # MQuAKE's questions field is a list containing different phrasings of the same question
+        # We just take the first one
         q_list = item.get('questions', [])
         if not q_list: continue
         question = q_list[0]
 
-        # 2. 获取多跳推理的目标答案 (New Answer / Counterfactual Answer)
-        # 我们想测的是：REMA 信号是否触动了模型进行“反事实推理”的回路
-        # 如果没有 new_answer (非编辑样本)，则回退到 answer
+        # 2. Get the Multi-hop reasoning target answer (New Answer / Counterfactual Answer)
+        # We want to test: does the REMA signal trigger the model's “counterfactual reasoning” circuit?
+        # If no new_answer (non-edited sample), fall back to answer
         target_answer = item.get('new_answer', item.get('answer'))
 
         if question and target_answer:
             qa_pairs.append((question, target_answer))
 
     print(f"Loaded {len(qa_pairs)} MQuAKE reasoning pairs.")
-    # 打印一个样本示例，确认加载正确
+    # Print one sample to confirm correct loading
     if qa_pairs:
         print(f"Sample Q: {qa_pairs[0][0]}")
         print(f"Sample A: {qa_pairs[0][1]}")
@@ -73,23 +73,23 @@ def load_mquake_data(path, limit=50):
 
 def compute_masked_loss(model, tokenizer, question, answer):
     """
-    构造 Prompt 并计算 Answer 部分的 Loss
+    Construct the prompt and compute loss over the Answer portion.
     Prompt: <User> Question <Assistant> Answer
     """
-    # Llama-3 模板
+    # Llama-3 template
     prompt_template = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
     prompt = prompt_template.format(question)
     full_text = prompt + answer
 
-    # 编码
+    # Encode
     enc_prompt = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
     enc_full = tokenizer(full_text, return_tensors="pt", add_special_tokens=False)
 
     input_ids = enc_full.input_ids.to(model.device)
     labels = input_ids.clone()
 
-    # Mask 掉 Prompt 部分 (设为 -100)
-    # 注意：要计算一下 prompt 的长度
+    # Mask the Prompt portion (set to -100)
+    # Note: compute the prompt length
     prompt_len = enc_prompt.input_ids.shape[1]
     labels[:, :prompt_len] = -100
 
@@ -100,28 +100,28 @@ def compute_masked_loss(model, tokenizer, question, answer):
 
 def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_pairs):
     """
-    对比测试：REMA 信号 vs. 随机同能量噪声
-    + [新增] 实时生成探针：观察前几个样本的实际输出
+    Comparison test: REMA signal vs. random equal-energy noise.
+    + [New] Real-time generation probe: observe actual outputs of the first few samples.
     """
     layer_name = f"model.layers.{layer_idx}.mlp.down_proj"
     weights = nethook.get_parameter(model, f"{layer_name}.weight")
 
-    # --- 1. 准备 REMA 向量 (Signal) ---
+    # --- 1. Prepare REMA vector (Signal) ---
     d_signal = update_matrix.to(weights.device).to(weights.dtype)
     signal_norm = d_signal.norm().item()
     if signal_norm == 0: return 0, 0
 
-    # --- 2. 准备 Random 向量 (Noise) ---
-    # 关键：保持能量 (Norm) 一致，方向随机
-    torch.manual_seed(42 + layer_idx)  # 不同的层用不同的随机种子
+    # --- 2. Prepare Random vector (Noise) ---
+    # Key: keep energy (Norm) identical, randomize direction
+    torch.manual_seed(42 + layer_idx)  # Different layers use different random seeds
     d_noise = torch.randn_like(d_signal)
     d_noise = d_noise / (d_noise.norm() + 1e-8) * signal_norm
 
-    # --- 3. 设定微扰强度 (epsilon) ---
-    # 扰动权重 Norm 的 1%
+    # --- 3. Set perturbation strength (epsilon) ---
+    # Perturb 1% of the weight Norm
     epsilon = weights.norm().item() * 0.01
 
-    # 归一化扰动向量
+    # Normalize perturbation vector
     pert_signal = (d_signal / (signal_norm + 1e-8)) * epsilon
     pert_noise = (d_noise / (d_noise.norm() + 1e-8)) * epsilon
 
@@ -129,7 +129,7 @@ def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_
     total_delta_noise = 0
     count = 0
 
-    # Prompt 模板 (用于生成时的格式化)
+    # Prompt template (for formatting during generation)
     prompt_tpl = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
 
     print(f"  > Probing {len(qa_pairs)} MQuAKE samples...")
@@ -142,19 +142,19 @@ def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_
             # =========================================================
             # A. Signal Sensitivity (REMA)
             # =========================================================
-            weights.data += pert_signal  # <--- 注入 REMA 信号
+            weights.data += pert_signal  # <--- Inject REMA signal
 
-            # 计算 Loss
+            # Compute Loss
             l_signal = compute_masked_loss(model, tokenizer, q, a)
 
-            # >>> [插入点] Case Study 生成测试 (只看前 3 个样本) <<<
+            # >>> [Insertion Point] Case Study generation test (first 5 samples only) <<<
             if count < 5:
                 print(f"\n🔍 [Case Study L{layer_idx} | Signal] Q: {q}")
-                # 构造标准对话输入
+                # Construct a standard chat input
                 prompt = prompt_tpl.format(q)
                 inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-                # 生成 (Greedy Search, Max 30 tokens)
+                # Generate (Greedy Search, Max 30 tokens)
                 with torch.no_grad():
                     gen_ids = model.generate(
                         **inputs,
@@ -163,17 +163,17 @@ def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_
                         pad_token_id=tokenizer.eos_token_id
                     )
 
-                # 解码 (只截取新生成的部分)
+                # Decode (only extract the newly generated portion)
                 input_len = inputs.input_ids.shape[1]
                 gen_text = tokenizer.decode(gen_ids[0][input_len:], skip_special_tokens=True)
 
-                # [修改点]：先处理字符串，避免 f-string 中出现反斜杠
+                # [Fix]: Pre-process the string to avoid backslashes in f-string
                 clean_output = gen_text.strip().replace('\n', ' ')
 
                 print(f"   [Model Output]: {clean_output}")
                 print(f"   [Target Answer]: {a}")
 
-            weights.data -= pert_signal  # <--- 还原权重 (Restore)
+            weights.data -= pert_signal  # <--- Restore weights
 
             # =========================================================
             # B. Noise Sensitivity (Random)
@@ -182,7 +182,7 @@ def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_
             l_noise = compute_masked_loss(model, tokenizer, q, a)
             weights.data -= pert_noise  # Restore
 
-            # 累加绝对变化量
+            # Accumulate absolute changes
             total_delta_signal += abs(l_signal - l0)
             total_delta_noise += abs(l_noise - l0)
             count += 1
@@ -198,27 +198,27 @@ def measure_ablation_sensitivity(model, layer_idx, update_matrix, tokenizer, qa_
 
 
 def reconstruct_matrix(pt_path, device="cuda"):
-    """加载并重建矩阵，兼容不同存储格式"""
+    """Load and reconstruct matrix, compatible with various storage formats."""
     data = torch.load(pt_path, map_location=device)
 
-    # Case A: SVD 格式 (U, S, V)
+    # Case A: SVD format (U, S, V)
     if "u" in data and "s" in data and "v" in data:
         u = data["u"].to(dtype=torch.float16)
         s = data["s"].to(dtype=torch.float16)
         v = data["v"].to(dtype=torch.float16)
-        # REMA 或是 投影矩阵，或是更新量，这里假设是 Update Delta
+        # REMA could be a projection matrix or an update; here we assume it's the Update Delta
         return (u * s) @ v.T
 
-    # Case B: 直接存储的矩阵
+    # Case B: Directly stored matrix
     elif "update_matrix" in data:
         return data["update_matrix"].to(dtype=torch.float16)
 
-    # Case C: 只有 V (Projection Matrix)
-    # 如果你存的是投影矩阵 P，你需要决定怎么把它转成扰动
-    # 这里假设我们测试的是 Update Matrix
-    # 如果文件里没有 Update Matrix，可能需要你手动指定逻辑
+    # Case C: Only V (Projection Matrix)
+    # If you stored a projection matrix P, you need to decide how to convert it to a perturbation
+    # Here we assume the test target is the Update Matrix
+    # If the file has no Update Matrix, you may need to specify the logic manually
     else:
-        # 尝试返回第一个可能是 Tensor 的值
+        # Try returning the first value that appears to be a Tensor
         for k, v in data.items():
             if isinstance(v, torch.Tensor):
                 return v.to(dtype=torch.float16)
@@ -228,7 +228,7 @@ def reconstruct_matrix(pt_path, device="cuda"):
 def main():
     args = parse_args()
 
-    # 加载模型
+    # Load model
     print(f"Loading Model: {args.model_path}")
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     tokenizer.pad_token = tokenizer.eos_token
@@ -238,7 +238,7 @@ def main():
         torch_dtype=torch.float16
     )
 
-    # 加载 MQuAKE 数据
+    # Load MQuAKE data
     qa_pairs = load_mquake_data(args.dataset_path, limit=args.probe_limit)
 
     print("\n" + "=" * 80)
@@ -249,34 +249,34 @@ def main():
     print("-" * 75)
 
     for layer in args.layers:
-        # 寻找对应的矩阵文件 (根据你的命名习惯调整通配符)
-        # 假设文件名类似: factors_trim_L12.pt 或 rema_update_L12.pt
+        # Find matching matrix file (adjust the wildcard pattern based on your naming convention)
+        # Example filenames: factors_trim_L12.pt or rema_update_L12.pt
         pattern = os.path.join(args.matrix_dir, f"*L{layer}*.pt")
         candidates = glob.glob(pattern)
 
-        # 简单过滤：优先找带 'trim' 或 'rema' 的
+        # Simple filter: prefer files containing 'trim' or 'rema'
         files = [f for f in candidates if 'trim' in f or 'rema' in f]
-        if not files and candidates: files = candidates  # 没找到就用所有候选
+        if not files and candidates: files = candidates  # Fall back to all candidates if none matched
 
         if not files:
             print(f"L{layer:<5} | No matrix file found.")
             continue
 
-        target_file = files[0]  # 取第一个
+        target_file = files[0]  # Take the first one
 
         try:
-            # 重建矩阵
+            # Reconstruct matrix
             update_mat = reconstruct_matrix(target_file, device=model.device)
 
-            # 执行测试
+            # Run test
             sens_signal, sens_noise = measure_ablation_sensitivity(
                 model, layer, update_mat, tokenizer, qa_pairs
             )
 
-            # 计算信噪比
+            # Compute signal-to-noise ratio
             ratio = sens_signal / (sens_noise + 1e-9)
 
-            # 简单的判定
+            # Simple verdict
             verdict = "✅ VALID" if ratio > 1.2 else ("⚠️ WEAK" if ratio > 1.0 else "❌ NOISE")
 
             print(f"L{layer:<5} | {sens_signal:.4e}   | {sens_noise:.4e}   | {ratio:.2f}x            | {verdict}")

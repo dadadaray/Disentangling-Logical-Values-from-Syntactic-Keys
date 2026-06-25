@@ -11,13 +11,13 @@ import os
 
 
 def plot_custom_heatmap():
-    # 1. 加载数据
+    # 1. Load data
     try:
         if os.path.exists('rema_overlap_grid.pt'):
             data = torch.load('rema_overlap_grid.pt')
             print("Data loaded successfully from rema_overlap_grid.pt")
         else:
-            # 如果文件不存在，生成模拟数据用于演示结构 (Fallback)
+            # If the file doesn't exist, generate mock data to demonstrate structure (fallback)
             print("Warning: rema_overlap_grid.pt not found. Using mock data for visualization.")
             k_len = 7
             data = {
@@ -30,16 +30,16 @@ def plot_custom_heatmap():
         return
 
     layers = [6, 16, 26]
-    k_math_list = [1, 2, 4, 8, 16, 32, 64]  # Y轴
-    k_gsm_list = [1, 4, 8, 16, 32, 64, 128]  # X轴
+    k_math_list = [1, 2, 4, 8, 16, 32, 64]  # Y-axis
+    k_gsm_list = [1, 4, 8, 16, 32, 64, 128]  # X-axis
 
-    # 设置绘图风格
+    # Set plot style
     sns.set_style("white")
     plt.rcParams['font.family'] = 'DejaVu Sans'
 
     fig, axes = plt.subplots(1, 3, figsize=(22, 6.5))
 
-    # 使用 YlGnBu (黄-绿-蓝) 渐变
+    # Use YlGnBu (yellow-green-blue) gradient
     cmap = "YlGnBu"
     vmin, vmax = 0.0, 1.0
 
@@ -47,34 +47,34 @@ def plot_custom_heatmap():
         ax = axes[idx]
         matrix = data[layer]
 
-        # 确保矩阵尺寸匹配 (Mock data 或者是真实数据的切片)
+        # Ensure matrix dimensions match (slice for mock data or real data)
         if matrix.shape[0] > 7: matrix = matrix[:7, :]
         if matrix.shape[1] > 7: matrix = matrix[:, :7]
 
-        # 绘制热力图
+        # Draw the heatmap
         heatmap = sns.heatmap(matrix, ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
                               annot=True, fmt=".2f", annot_kws={"size": 10, "weight": "bold"},
                               cbar=False, square=True, linewidths=1, linecolor='white')
 
-        # 标题
+        # Title
         ax.set_title(f"Layer {layer}", fontsize=18, fontweight='bold', pad=20, color='#333333')
 
-        # X轴标签 (GSM8K)
+        # X-axis labels (GSM8K)
         ax.set_xticks(np.arange(len(k_gsm_list)) + 0.5)
         ax.set_xticklabels(k_gsm_list, rotation=0, fontsize=12)
-        ax.set_xlabel(r"GSM8K Rank ($k_g$)", fontsize=14, fontweight='bold', color='#2ca02c')  # 绿色字体呼应 GSM
+        ax.set_xlabel(r"GSM8K Rank ($k_g$)", fontsize=14, fontweight='bold', color='#2ca02c')  # Green to echo GSM
 
-        # Y轴标签 (MATH)
+        # Y-axis labels (MATH)
         ax.set_yticks(np.arange(len(k_math_list)) + 0.5)
         ax.set_yticklabels(k_math_list, rotation=0, fontsize=12)
 
         if idx == 0:
-            ax.set_ylabel(r"MATH Rank ($k_m$)", fontsize=14, fontweight='bold', color='#1f77b4')  # 蓝色字体呼应 MATH
+            ax.set_ylabel(r"MATH Rank ($k_m$)", fontsize=14, fontweight='bold', color='#1f77b4')  # Blue to echo MATH
         else:
             ax.set_ylabel("")
             ax.set_yticks([])
 
-    # 添加 Colorbar
+    # Add a shared colorbar
     cbar_ax = fig.add_axes([0.93, 0.15, 0.015, 0.7])
     norm = plt.Normalize(vmin=vmin, vmax=vmax)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)

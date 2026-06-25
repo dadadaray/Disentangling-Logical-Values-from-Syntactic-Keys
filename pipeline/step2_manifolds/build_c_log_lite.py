@@ -9,7 +9,7 @@ import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils import nethook
 
-# ================= 配置区域 =================
+# ================= Configuration =================
 MODEL_NAME = "/data/users/yanrongen/AnyEdit/LLM-Llama-3-8B-Instruct"
 LAYERS = [12, 13, 14, 15, 16]
 SAVE_DIR = "rema_matrices"
@@ -34,11 +34,11 @@ def main():
 
     """
         REMA-Lite: Enhanced Version
-        基于学术界验证的 CoT Triggers 和 Instruction Templates 构建通用推理流形。
-        引用来源: Kojima et al. (2022), Wang et al. (2023), Zhou et al. (2023).
+        Build a general reasoning manifold based on academically validated CoT Triggers and Instruction Templates.
+        References: Kojima et al. (2022), Wang et al. (2023), Zhou et al. (2023).
         """
 
-    # 1. 基础 CoT (Basic Chain-of-Thought)
+    # 1. Basic Chain-of-Thought
     base_cot = [
         "Let's think step by step.",
         "Let's work this out in a step by step way to be sure we have the right answer.",
@@ -52,7 +52,7 @@ def main():
         "Take a deep breath and work on this problem step-by-step."
     ]
 
-    # 2. 规划与执行 (Plan-and-Solve)
+    # 2. Planning & Execution (Plan-and-Solve)
     planning = [
         "Let's make a plan to solve this.",
         "First, create a step-by-step plan. Then, carry out the plan.",
@@ -66,7 +66,7 @@ def main():
         "Let's calculate the intermediate values."
     ]
 
-    # 3. 因果与反事实 (Causal & Counterfactual)
+    # 3. Causal & Counterfactual
     causal = [
         "If X happens, what is the likely consequence?",
         "Because of A, B occurred. Therefore,",
@@ -80,7 +80,7 @@ def main():
         "Hypothetically, if the condition were changed, then"
     ]
 
-    # 4. 数学与符号 (Math & Symbolic)
+    # 4. Math & Symbolic
     math_logic = [
         "To solve for x, we need to",
         "The formula for this calculation is",
@@ -94,7 +94,7 @@ def main():
         "The geometric properties suggest that"
     ]
 
-    # 5. 批判性思维 (Critical Thinking)
+    # 5. Critical Thinking
     critical = [
         "Are there any logical fallacies in this argument?",
         "Let's evaluate the strength of this evidence.",

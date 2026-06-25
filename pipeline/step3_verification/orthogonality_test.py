@@ -12,7 +12,7 @@ from utils.layer_stats_mom2 import layer_stats
 import torch.nn.functional as F
 
 
-# --- Helper Functions (保持不变) ---
+# --- Helper Functions ---
 def safe_load_matrix(path, device, top_k=None):
     if not os.path.exists(path):
         if os.path.exists(path + ".pt"):
@@ -46,7 +46,7 @@ def compute_metrics(U_base, U_sweep):
     # Interaction matrix: [K_sweep, K_base]
     interaction = torch.matmul(U_sweep.T, U_base)
 
-    # Metric 1: Max Cosine Similarity (最严苛的指标)
+    # Metric 1: Max Cosine Similarity (the strictest metric)
     max_overlap = torch.max(torch.abs(interaction)).item()
 
     # Metric 2: Avg Leakage
@@ -84,7 +84,7 @@ def main():
     parser.add_argument("--model_name", type=str, default="/data/users/yanrongen/AnyEdit/LLM-Llama-3-8B-Instruct")
     parser.add_argument("--stats_dir", type=str, default="/data/users/yanrongen/ROME-MEMIT/data/stats")
     parser.add_argument("--matrix_dir", type=str, default="rema_matrices")
-    # 建议只测深层，因为那里是推理形成的地方
+    # We recommend testing only deep layers, since that is where reasoning takes shape
     parser.add_argument("--layers", nargs='+', type=int, default=[14, 15, 16])
     args = parser.parse_args()
 
@@ -100,11 +100,11 @@ def main():
         print(f"❌ Critical Error: {e}")
         return
 
-    # === 核心修正：使用您算出的 Elbow 值 ===
-    # 这些是定义"推理流形"的边界
+    # === Core fix: Use the elbow values you determined ===
+    # These define the boundary of the "reasoning manifold"
     elbow_configs = {
-        "math": 64,  # 您指定的 Elbow 点
-        "gsm8k": 128  # 您指定的 Elbow 点
+        "math": 64,  # Elbow point you specified
+        "gsm8k": 128  # Elbow point you specified
     }
 
     sweep_steps = [1, 8, 16, 32, 64, 128, 256, 512]
@@ -137,27 +137,27 @@ def main():
             print(f"\n   🛡️ Dataset: {r_name.upper()} (Elbow k={elbow_k})")
 
             # --- EXPERIMENT A: SAFETY TEST (Fix REMA @ Elbow, Sweep MOM2) ---
-            # 逻辑：我们将完整的有效推理流形（前k个维度）全部拿出来。
-            # 测试：这整个推理子空间，是否与通用背景的主成分正交？
+            # Logic: Take the full effective reasoning manifold (the first k dimensions).
+            # Test: Is this entire reasoning subspace orthogonal to the principal components of the general background?
             print(f"      [Exp A] Fixing REMA (k={elbow_k}), Sweeping MOM2:")
             print(f"      MOM2_K | MaxCos | AvgLeak")
 
-            U_r = U_rema_full[:, :elbow_k]  # 使用完整的 Elbow 子空间
+            U_r = U_rema_full[:, :elbow_k]  # use the full Elbow subspace
 
             for k_m in sweep_steps:
                 U_m = U_mom2_full[:, :k_m]
                 max_cos, avg_leak = compute_metrics(U_m, U_r)
 
-                # 标记：如果使用了很大的背景空间(k_m=256)依然正交，那就是极好的
+                # Marker: If it stays orthogonal even with a large background space (k_m=256), that is excellent
                 marker = "✅" if max_cos < 0.2 else "⚠️"
                 print(f"      {k_m:<6} | {max_cos:.4f} | {avg_leak:.4f} {marker}")
 
             print("-" * 40)
 
             # --- EXPERIMENT B: PURITY TEST (Fix MOM2 @ 256, Sweep REMA) ---
-            # 逻辑：固定一个较大的通用背景（MOM2 Top-256）。
-            # 测试：随着我们引入越来越多的推理维度，什么时候开始撞上背景墙？
-            # 重点关注：在达到 Elbow 点 (64/128) 之前，是否依然保持正交？
+            # Logic: Fix a reasonably large general background (MOM2 Top-256).
+            # Test: As we introduce more and more reasoning dimensions, when do we start hitting the background wall?
+            # Key question: Does it stay orthogonal before reaching the Elbow point (64/128)?
             fixed_mom2_k = 256
             print(f"      [Exp B] Fixing MOM2 (k={fixed_mom2_k}), Sweeping REMA:")
             print(f"      REMA_K | MaxCos | AvgLeak | Status")
@@ -171,7 +171,7 @@ def main():
 
                 status = ""
                 if k_r == elbow_k:
-                    status = "⬅️ ELBOW"  # 标记拐点
+                    status = "⬅️ ELBOW"  # Mark the elbow point
                 elif k_r < elbow_k and max_cos > 0.3:
                     status = "⚠️ DIRTY EARLY"
 
