@@ -3,30 +3,30 @@ import os
 import re
 from tqdm import tqdm
 
-# ================= 配置 =================
-# 请确保你的原始 jsonl 文件在这个路径
+# ================= Configuration =================
+# Make sure your original jsonl file is at this path
 MATH_INPUT_PATH = "D:\py demos\LLM\AnyEdit-main\AnyEdit-main/data/math/test.jsonl"
 MATH_OUTPUT_PATH = "data/math/test.json"
 
 
-# =======================================
+# =================================================
 
 def extract_boxed_answer(solution):
     """
-    鲁棒地提取 LaTeX 中 \boxed{...} 的内容，支持嵌套括号。
-    例如: "The answer is \boxed{\frac{1}{2}}" -> "\frac{1}{2}"
+    Robustly extracts the content of LaTeX \boxed{...}, supporting nested braces.
+    Example: "The answer is \boxed{\frac{1}{2}}" -> "\frac{1}{2}"
     """
-    # 1. 找到所有 \boxed{ 的起始位置
-    # 我们通常取最后一个 \boxed，因为前面的可能是中间步骤
+    # 1. Find all occurrences of \boxed{
+    # We typically take the last \boxed, since earlier ones may be intermediate steps
     start_indices = [m.start() for m in re.finditer(r'\\boxed\{', solution)]
 
     if not start_indices:
         return None
 
-    # 取最后一个 \boxed
+    # Take the last \boxed
     start_index = start_indices[-1]
 
-    # 2. 栈式扫描，匹配对应的结束括号 }
+    # 2. Stack-based scan to match the corresponding closing brace }
     content_start = start_index + 7  # len("\\boxed{") == 7
     balance = 0
     answer = []
@@ -38,20 +38,20 @@ def extract_boxed_answer(solution):
             balance += 1
         elif char == '}':
             if balance == 0:
-                # 找到了最外层的结束括号
+                # Found the outermost closing brace
                 return "".join(answer)
             balance -= 1
 
         answer.append(char)
 
-    return "".join(answer)  # 如果没闭合，返回当前提取到的所有内容(兜底)
+    return "".join(answer)  # Fallback: return whatever was extracted if unmatched
 
 
 def process_math_file():
-    print(f"🔄 Reprocessing MATH dataset from {MATH_INPUT_PATH}...")
+    print(f"Reprocessing MATH dataset from {MATH_INPUT_PATH}...")
 
     if not os.path.exists(MATH_INPUT_PATH):
-        print(f"❌ File not found: {MATH_INPUT_PATH}")
+        print(f"File not found: {MATH_INPUT_PATH}")
         return
 
     processed_data = []
@@ -64,29 +64,29 @@ def process_math_file():
         try:
             item = json.loads(line)
 
-            # MATH 原始字段通常是 problem, solution
+            # MATH raw fields are typically problem, solution
             question = item.get("problem", item.get("question", ""))
             solution = item.get("solution", item.get("full_solution", ""))
 
-            # 1. 优先使用数据集自带的 answer (如果有且格式正确)
-            # 你贴的样本里有 "answer" 字段，如果原始文件里有，直接用它最准！
+            # 1. Prefer the dataset's own answer field (if present and well-formed)
+            # If the original file has an "answer" field, using it directly is the most accurate!
             raw_answer = item.get("answer")
 
-            # 2. 如果没有或看起来不对，从 solution 提取 boxed
+            # 2. If absent or suspect, extract the boxed answer from the solution
             extracted_answer = extract_boxed_answer(solution)
 
-            # 决策：如果 raw_answer 看起来很短（纯答案），用它；否则用 boxed
-            # 这里我们信任 boxed 提取的结果，因为它更精准对应 REMA 的做法
+            # Decision: if raw_answer looks short (pure answer), use it; otherwise use the boxed one
+            # Here we trust the boxed extraction result, as it more precisely matches REMA's approach
             final_answer = extracted_answer if extracted_answer else raw_answer
 
             if not final_answer:
-                final_answer = "No Answer Found"  # 兜底
+                final_answer = "No Answer Found"  # Fallback
 
             new_item = {
                 "case_id": i,
                 "id": i,
                 "question": question,
-                "answer": final_answer,  # 这里的答案现在是完整的 LaTeX
+                "answer": final_answer,  # The answer here is now complete LaTeX
                 "full_solution": solution,
                 "subject": item.get("subject", "math"),
                 "level": item.get("level", "unknown")
@@ -96,13 +96,13 @@ def process_math_file():
         except json.JSONDecodeError:
             continue
 
-    # 保存
+    # Save
     with open(MATH_OUTPUT_PATH, 'w', encoding='utf-8') as f:
         json.dump(processed_data, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Saved {len(processed_data)} fixed items to {MATH_OUTPUT_PATH}")
+    print(f"Saved {len(processed_data)} fixed items to {MATH_OUTPUT_PATH}")
 
-    # 验证几个样本
+    # Verify a few samples
     print("\n--- Sample Check ---")
     for j in range(min(3, len(processed_data))):
         print(f"Q: {processed_data[j]['question'][:50]}...")

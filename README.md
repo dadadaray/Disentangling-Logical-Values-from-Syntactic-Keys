@@ -12,21 +12,18 @@ Knowledge editing (KE) efficiently updates large language models without retrain
 
 ```
 IntIso/
-├── paper/                     # Paper LaTeX source
-├── pipeline/                  # TACL paper experiments (Python only, ordered by section)
+├── paper/                     # LaTeX source of the paper
+├── pipeline/                  # Experiment scripts, ordered by paper section
 │   ├── step1_localization/    # Sec 3.1: Causal tracing of reasoning hubs
-│   ├── step2_manifolds/       # Sec 3.2: Build C_syn and C_log manifolds
+│   ├── step2_manifolds/       # Sec 3.2: C_syn and C_log manifold construction
 │   ├── step3_verification/    # Sec 3.3: Geometric conflict verification
-│   ├── step4_intiso/          # Sec 4: IntIso method (ablation/injection)
-│   └── step5_validation/      # Sec 5: Validation and plotting
-├── slurm/                     # SLURM job scripts (exact params for cluster reproduction)
-│   └── step*/                 # Mirror of pipeline/ structure
-├── data/                      # Dataset loaders (GSM8K, MATH, MQuAKE, BLiMP)
-├── utils/                     # Core utilities + preprocessing tools
-├── notebooks/                 # Jupyter notebooks for analysis & visualization
-├── results/                   # Pre-computed analysis outputs
-├── scripts/                   # Environment setup scripts
-└── originals/                 # Complete backup of original codebase
+│   ├── step4_intiso/          # Sec 4: IntIso ablation/injection
+│   └── step5_validation/      # Sec 5: Figures and diagnostics
+├── slurm/                     # SLURM job scripts with exact experimental parameters
+│   └── step*/                 # Mirrors pipeline/ structure
+├── data/                      # Dataset loaders (GSM8K, MATH)
+├── utils/                     # Core utilities + data preprocessing tools
+└── notebooks/                 # Causal tracing & visualization notebooks
 ```
 
 ## Pipeline
@@ -86,7 +83,7 @@ python pipeline/step3_verification/orthogonality_test.py \
     --stats_dir /path/to/stats --matrix_dir /path/to/rema_matrices
 ```
 
-SLURM submission scripts (`.sh` files) with exact parameter configurations used in the paper are provided alongside each Python script.
+SLURM submission scripts (`.sh` files) with exact parameter configurations used in the paper are in the `slurm/` directory.
 
 ## Models
 
@@ -103,9 +100,16 @@ Required datasets (not included, download separately):
 - **MQuAKE-CF** (multi-hop reasoning probe)
 - **BLiMP** (grammatical minimal pairs)
 
-## Note
+## Citation
 
-This repository contains only code related to IntIso framework.
+```bibtex
+@article{intiso2026,
+  title={Disentangling Logical Values from Syntactic Keys: Exposing Geometric Conflict in Knowledge Editing},
+  author={...},
+  journal={Transactions of the Association for Computational Linguistics},
+  year={2026}
+}
+```
 
 ## License
 

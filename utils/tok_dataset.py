@@ -12,12 +12,12 @@ class TokenizedDataset(Dataset):
 
     def __init__(self, text_dataset, tokenizer=None, maxlen=None, field="text"):
         self.text_dataset = text_dataset
-        self.field = field  # 对于 Chunking 缓存，这个 field 可能是错误的
+        self.field = field  # For chunking cache, this field may be incorrect
         self.tokenizer = tokenizer
         self.maxlen = maxlen
         if hasattr(text_dataset, "info"):
             self.info = text_dataset.info
-        # 移除了不必要的类型检查，避免干扰
+        # Removed unnecessary type checks to avoid interference
 
     def __len__(self):
         return len(self.text_dataset)
@@ -25,31 +25,31 @@ class TokenizedDataset(Dataset):
     def __getitem__(self, i):
         row_data = self.text_dataset[i]
         # ------------------------------------------------------------------
-        # 核心修正逻辑：优先处理已分词的 'input_ids'
+        # Core fix: prioritize pre-tokenized 'input_ids'
         # ------------------------------------------------------------------
 
         if 'input_ids' in row_data:
-            # 路径 1: 数据已分词 (来自 Chunking 缓存)
+            # Path 1: data is already tokenized (from chunking cache)
             token_list = row_data['input_ids']
         else:
-            # 路径 2: 数据是原始文本 (旧逻辑或未分词的数据集)
-            # 解决 KeyError: 'text' 的关键点
+            # Path 2: data is raw text (legacy path or untokenized dataset)
+            # Key to resolving KeyError on 'text'
 
-            # 1. 提取原始文本
+            # 1. Extract raw text
             if self.field in row_data:
                 text = row_data[self.field]
             else:
-                # 假设 row_data 是一个单独的字符串
+                # Assume row_data is a plain string
                 text = row_data
 
-                # 2. 对文本进行分词
+                # 2. Tokenize the text
             token_list = self.tokenizer.encode(
                 text, truncation=True, max_length=self.maxlen
             )
         # ------------------------------------------------------------------
-        # 共同的后处理逻辑
+        # Shared post-processing logic
         # ------------------------------------------------------------------
-        # 如果 maxlen 仍需要截断（尽管 Chunking 已经处理），或者 token_list 长度超过 maxlen
+        # Truncate if maxlen is still needed (even after chunking), or token_list exceeds maxlen
         if self.maxlen is not None:
             token_list = token_list[: self.maxlen]
         position_ids = list(range(len(token_list)))
