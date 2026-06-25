@@ -103,20 +103,9 @@ Required datasets (not included, download separately):
 - **MQuAKE-CF** (multi-hop reasoning probe)
 - **BLiMP** (grammatical minimal pairs)
 
-## Citation
-
-```bibtex
-@article{intiso2026,
-  title={Disentangling Logical Values from Syntactic Keys: Exposing Geometric Conflict in Knowledge Editing},
-  author={...},
-  journal={Transactions of the Association for Computational Linguistics},
-  year={2026}
-}
-```
-
 ## Note
 
-This repository contains only code related to the TACL paper (IntIso framework). The AnyEdit editing methods (ROME, MEMIT, AlphaEdit, UNKE) are from a separate paper and are preserved in `originals/` for reference only. The complete original codebase is archived in `originals/`.
+This repository contains only code related to IntIso framework.
 
 ## License
 
